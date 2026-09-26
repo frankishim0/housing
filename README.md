@@ -61,7 +61,7 @@ Database-backed Nigerian property marketplace built with Next.js, TypeScript, Ta
 - `AUTH_SECRET`: long random application secret.
 - `APP_URL`: public HTTPS URL used in password-reset links.
 - `RESEND_API_KEY`: Resend API key used to send password-reset emails.
-- `EMAIL_FROM`: verified sender address for password-reset emails.
+- Password-reset emails use Resend's sandbox sender, `onboarding@resend.dev`.
 - `PAYSTACK_SECRET_KEY`: required for real Paystack payments.
 - `FLUTTERWAVE_SECRET_KEY`: reserved for a future Flutterwave provider.
 - Cloud storage credentials: required before production media uploads.

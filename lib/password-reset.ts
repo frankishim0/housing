@@ -22,9 +22,8 @@ export function getPasswordResetUrl(token: string) {
 
 export async function sendPasswordResetEmail(email: string, resetUrl: string) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
-  if (!apiKey || !from) {
-    throw new Error('RESEND_API_KEY and EMAIL_FROM must be configured.');
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY must be configured.');
   }
 
   const response = await fetch('https://api.resend.com/emails', {
@@ -34,7 +33,7 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from,
+      from: 'onboarding@resend.dev',
       to: [email],
       subject: 'Reset your Nigerian Homes password',
       text: `Use this link to reset your password: ${resetUrl}\n\nThis link expires in one hour and can only be used once.`,
