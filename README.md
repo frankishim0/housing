@@ -76,3 +76,5 @@ npm run typecheck
 npm run lint
 npm run build
 ```
+
+<!-- README update to trigger a Git commit. -->
