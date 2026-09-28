@@ -2,10 +2,17 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { CountrySelect } from '@/components/country-select';
+import { CurrencySelect } from '@/components/currency-select';
+import { getCountryCurrency } from '@/lib/international';
+import { useSetCurrencyPreference } from '@/components/currency-preference';
 
 export default function AuthPage() {
   const router = useRouter();
+  const setDisplayCurrency = useSetCurrencyPreference();
   const [register, setRegister] = useState(false);
+  const [countryCode, setCountryCode] = useState('');
+  const [preferredCurrency, setPreferredCurrency] = useState('USD');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
 
@@ -25,7 +32,8 @@ export default function AuthPage() {
       setError(typeof result.error === 'string' ? result.error : 'Unable to authenticate.');
       return;
     }
-    router.push(result.user.role === 'OWNER' || result.user.role === 'AGENT' ? '/dashboard' : '/search');
+    if (result.user.preferredCurrency) setDisplayCurrency?.(result.user.preferredCurrency);
+    router.push(['OWNER', 'LANDLORD', 'AGENT', 'PROPERTY_MANAGER', 'DEVELOPER'].includes(result.user.role) ? '/dashboard' : '/search');
     router.refresh();
   }
 
@@ -35,7 +43,7 @@ export default function AuthPage() {
         <div className="hidden bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),_transparent_40%),linear-gradient(180deg,_#0f172a_0%,_#111827_100%)] p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-400">Secure access</p>
-            <h1 className="mt-4 text-4xl font-bold">Welcome back to Nigeria’s leading marketplace.</h1>
+            <h1 className="mt-4 text-4xl font-bold">Welcome to property discovery without borders.</h1>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
             <p className="text-emerald-200">Trusted by home seekers and property professionals.</p>
@@ -58,17 +66,31 @@ export default function AuthPage() {
                 <label className="block text-sm font-medium text-slate-700">
                   <span className="mb-2 block">Account type</span>
                   <select name="role" defaultValue="USER" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <option value="USER">Property seeker</option>
+                    <option value="USER">Buyer</option>
+                    <option value="TENANT">Tenant</option>
                     <option value="OWNER">Property owner</option>
+                    <option value="LANDLORD">Landlord</option>
                     <option value="AGENT">Real estate agent</option>
+                    <option value="PROPERTY_MANAGER">Property manager</option>
+                    <option value="DEVELOPER">Developer</option>
                   </select>
                 </label>
+                <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Country</span><CountrySelect value={countryCode} onChange={(value) => {
+                  setCountryCode(value);
+                  setPreferredCurrency(value ? getCountryCurrency(value) : 'USD');
+                }} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Region</span><input name="region" autoComplete="address-level1" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
+                  <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">City</span><input name="city" autoComplete="address-level2" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
+                </div>
+                <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Preferred display currency</span><CurrencySelect value={preferredCurrency} onChange={setPreferredCurrency} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
               </>
             )}
             <label className="block text-sm font-medium text-slate-700">
               <span className="mb-2 block">Email</span>
-              <input name="email" type="email" required className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" />
+              <input name="email" type="email" required autoComplete="email" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" />
             </label>
+            {register && <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Phone with country code</span><input name="phone" type="tel" autoComplete="tel" placeholder="+1 555 010 1234" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" /></label>}
             <label className="block text-sm font-medium text-slate-700">
               <span className="mb-2 block">Password</span>
               <input name="password" type="password" minLength={8} required className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" />

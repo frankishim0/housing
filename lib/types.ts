@@ -1,16 +1,6 @@
-export type ListingType = 'Rent' | 'Sale';
-export type PropertyType =
-  | 'Apartment'
-  | 'House'
-  | 'Duplex'
-  | 'Detached House'
-  | 'Semi-detached House'
-  | 'Terrace'
-  | 'Penthouse'
-  | 'Studio'
-  | 'Office'
-  | 'Land'
-  | 'Commercial property';
+export type ListingType = 'Rent' | 'Sale' | 'Short-term rental' | 'Long-term rental' | 'Lease';
+export type PropertyType = string;
+export type MeasurementUnit = 'SQUARE_METERS' | 'SQUARE_FEET' | 'ACRES' | 'HECTARES';
 
 export interface LocationSummary {
   country: string;
@@ -18,6 +8,11 @@ export interface LocationSummary {
   city: string;
   area: string;
   address: string;
+  countryCode?: string | null;
+  postalCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  hideExactAddress?: boolean;
 }
 
 export interface PropertyOwner {
@@ -25,6 +20,7 @@ export interface PropertyOwner {
   company: string;
   avatar: string;
   rating: number;
+  verified?: boolean;
 }
 
 export interface Property {
@@ -35,11 +31,18 @@ export interface Property {
   type: PropertyType;
   listingType: ListingType;
   price: number;
-  currency: 'NGN';
+  currency: string;
   location: LocationSummary;
   bedrooms: number;
   bathrooms: number;
   size: number;
+  sizeUnit: MeasurementUnit;
+  furnished: boolean | null;
+  parkingSpaces: number | null;
+  hasPool: boolean;
+  hasSecurity: boolean;
+  luxury: boolean;
+  yearBuilt: number | null;
   status: 'Available' | 'Occupied' | 'Negotiation' | 'Sold' | 'Rented';
   verified: boolean;
   featured: boolean;

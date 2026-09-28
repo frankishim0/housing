@@ -5,38 +5,69 @@ import { PropertyCard } from '@/components/property-card';
 import { SearchForm } from '@/components/search-form';
 import { prisma } from '@/lib/prisma';
 import { presentProperty } from '@/lib/property-presenter';
+import { getSessionUser } from '@/lib/auth';
+import { getMessages } from '@/lib/i18n';
+import { toSlug } from '@/lib/location';
+import { NearbyProperties } from '@/components/nearby-properties';
 
 export const dynamic = 'force-dynamic';
 
 const categories = [
-  { name: 'Apartments', count: '1,240 listings', color: 'bg-emerald-100 text-emerald-700' },
-  { name: 'Houses', count: '890 listings', color: 'bg-sky-100 text-sky-700' },
-  { name: 'Commercial', count: '360 listings', color: 'bg-amber-100 text-amber-700' },
-  { name: 'Land', count: '540 listings', color: 'bg-violet-100 text-violet-700' },
+  { name: 'Residential', count: 'Apartments, houses, villas, and more', color: 'bg-emerald-100 text-emerald-700' },
+  { name: 'Short stays', count: 'Flexible furnished rentals', color: 'bg-sky-100 text-sky-700' },
+  { name: 'Commercial', count: 'Retail, offices, and industrial', color: 'bg-amber-100 text-amber-700' },
+  { name: 'Land', count: 'Lots, farms, and development sites', color: 'bg-violet-100 text-violet-700' },
 ];
 
 const stats = [
-  { label: 'Verified listings', value: '18.4k+' },
-  { label: 'Happy clients', value: '14k+' },
-  { label: 'Avg. response time', value: '< 2h' },
-  { label: 'Cities covered', value: '24' },
-];
-
-const testimonials = [
-  { name: 'Chiamaka A.', quote: 'The search experience and verified listings made our apartment hunt in Lagos effortless.' },
-  { name: 'Sylvester O.', quote: 'We found a premium duplex in Abuja within days, and the dashboard kept us organized.' },
+  { label: 'Explore', value: 'Any country' },
+  { label: 'Currency', value: 'Local prices' },
+  { label: 'Professionals', value: 'Verified-ready' },
+  { label: 'Contact', value: 'Cross-border' },
 ];
 
 export default async function HomePage() {
-  const databaseProperties = await prisma.property.findMany({
+  const currentUser = await getSessionUser();
+  const t = getMessages(currentUser?.preferredLanguage);
+  const [databaseProperties, luxuryRecords, rentRecords, saleRecords, popularCountryRecords] = await Promise.all([prisma.property.findMany({
     where: { status: 'PUBLISHED' },
     include: { location: true, media: true, amenities: true, owner: true, agent: true },
     orderBy: { createdAt: 'desc' },
+    take: 18,
+  }),
+  prisma.property.findMany({ where: { status: 'PUBLISHED', luxury: true }, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
+  prisma.property.findMany({ where: { status: 'PUBLISHED', listingType: { in: ['RENT', 'SHORT_TERM_RENT', 'LONG_TERM_RENT'] } }, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
+  prisma.property.findMany({ where: { status: 'PUBLISHED', listingType: 'SALE' }, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
+  prisma.location.findMany({
+    where: { properties: { some: { status: 'PUBLISHED' } } },
+    select: { country: true, countryCode: true, _count: { select: { properties: true } } },
+    orderBy: { properties: { _count: 'desc' } },
+    distinct: ['countryCode'],
     take: 6,
+  })]);
+  const promotionHistory = await prisma.featuredListing.findMany({
+    where: { propertyId: { in: databaseProperties.map((property) => property.id) }, status: 'PAID' },
+    select: { propertyId: true, startsAt: true, expiresAt: true },
   });
-  const presented = databaseProperties.map((property) => presentProperty(property));
+  const promotionsByProperty = new Map<string, typeof promotionHistory>();
+  for (const promotion of promotionHistory) {
+    const promotions = promotionsByProperty.get(promotion.propertyId) ?? [];
+    promotions.push(promotion);
+    promotionsByProperty.set(promotion.propertyId, promotions);
+  }
+  const now = new Date();
+  const presented = databaseProperties.map((property) => {
+    const promotionRecords = promotionsByProperty.get(property.id);
+    const featured = promotionRecords
+      ? promotionRecords.some((promotion) => promotion.startsAt !== null && promotion.startsAt <= now && (!promotion.expiresAt || promotion.expiresAt > now))
+      : property.featured;
+    return { ...presentProperty(property), featured };
+  });
   const featured = presented.filter((property) => property.featured);
   const recent = presented.slice(0, 3);
+  const luxuryProperties = luxuryRecords.map((property) => presentProperty(property));
+  const rentals = rentRecords.map((property) => presentProperty(property));
+  const propertiesForSale = saleRecords.map((property) => presentProperty(property));
   const popularLocations = (await prisma.location.findMany({
     where: { properties: { some: { status: 'PUBLISHED' } } },
     include: { _count: { select: { properties: true } } },
@@ -45,6 +76,9 @@ export default async function HomePage() {
   })).map((location) => ({
     name: location.area,
     state: location.city,
+    country: location.country,
+    countryCode: location.countryCode,
+    region: location.state,
     listings: location._count.properties,
     image: 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80',
   }));
@@ -56,17 +90,19 @@ export default async function HomePage() {
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-lg font-bold text-white">N</div>
             <div>
-              <p className="text-xl font-bold tracking-tight">Nigerian Homes</p>
-              <p className="text-xs text-slate-500">Property marketplace</p>
+              <p className="text-xl font-bold tracking-tight">Homes Worldwide</p>
+              <p className="text-xs text-slate-500">Global real-estate marketplace</p>
             </div>
           </div>
           <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 md:flex">
             <Link href="/search">Buy</Link>
             <Link href="/search?listingType=Rent">Rent</Link>
+            <Link href="/messages" className="hidden md:inline">Messages</Link>
             <Link href="/dashboard">Dashboard</Link>
             <Link href="/listings/new">List property</Link>
           </nav>
           <div className="flex items-center gap-3">
+            <Link href="/messages" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Messages"><MessageSquareText size={19} /></Link>
             <Link href="/auth" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Log in</Link>
             <Link href="/auth" className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Join now</Link>
           </div>
@@ -77,13 +113,11 @@ export default async function HomePage() {
         <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 lg:grid-cols-[1.2fr_0.8fr] lg:px-8 lg:py-24">
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
-              <ShieldCheck size={16} /> Trusted property marketplace for Nigeria
+              <ShieldCheck size={16} /> A more open property marketplace
             </div>
-            <h1 className="max-w-xl text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">
-              Find your next home with confidence.
-            </h1>
+            <h1 className="max-w-xl text-5xl font-black tracking-tight text-slate-900 sm:text-6xl">{t.heroTitle}</h1>
             <p className="mt-5 max-w-xl text-lg text-slate-600">
-              Discover verified homes, apartments, and commercial property opportunities across Nigeria’s most in-demand cities.
+              {t.heroDescription}
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
@@ -115,8 +149,8 @@ export default async function HomePage() {
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Featured deal</p>
               <div className="mt-2 flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-lg font-bold text-slate-900">₦93m</p>
-                  <p className="text-sm text-slate-600">Maitama duplex</p>
+                  <p className="text-lg font-bold text-slate-900">Global listings</p>
+                  <p className="text-sm text-slate-600">One search, many markets</p>
                 </div>
                 <div className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
                   <Star size={12} fill="currentColor" /> 4.9
@@ -138,6 +172,8 @@ export default async function HomePage() {
         <SearchForm />
       </section>
 
+      <NearbyProperties preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} />
+
       <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold text-slate-900">Featured properties</h2>
@@ -145,31 +181,46 @@ export default async function HomePage() {
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
           {featured.map((property) => (
-            <PropertyCard key={property.id} property={property} />
+            <PropertyCard key={property.id} property={property} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} preferredMeasurement={currentUser?.measurementUnit} />
           ))}
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-3xl font-bold text-slate-900">Recently added</h2>
+          <h2 className="text-3xl font-bold text-slate-900">{t.recentlyAdded}</h2>
           <Link href="/search" className="text-sm font-semibold text-emerald-700">Browse market</Link>
         </div>
         <div className="grid gap-6 lg:grid-cols-3">
           {recent.map((property) => (
-            <PropertyCard key={property.id} property={property} />
+            <PropertyCard key={property.id} property={property} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} preferredMeasurement={currentUser?.measurementUnit} />
           ))}
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+        <div className="mb-6 flex items-center justify-between"><div><p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Curated</p><h2 className="mt-2 text-3xl font-bold text-slate-900">{t.luxuryProperties}</h2></div><Link href="/search?sort=price_desc" className="text-sm font-semibold text-emerald-800">Explore luxury</Link></div>
+        <div className="grid gap-6 lg:grid-cols-3">{luxuryProperties.map((property) => <PropertyCard key={property.id} property={property} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} preferredMeasurement={currentUser?.measurementUnit} />)}</div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+        <div className="mb-6 flex items-center justify-between"><h2 className="text-3xl font-bold text-slate-900">{t.forRent}</h2><Link href="/search?listingType=RENT" className="text-sm font-semibold text-emerald-800">Browse rentals</Link></div>
+        <div className="grid gap-6 lg:grid-cols-3">{rentals.map((property) => <PropertyCard key={property.id} property={property} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} preferredMeasurement={currentUser?.measurementUnit} />)}</div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+        <div className="mb-6 flex items-center justify-between"><h2 className="text-3xl font-bold text-slate-900">{t.forSale}</h2><Link href="/search?listingType=SALE" className="text-sm font-semibold text-emerald-800">Browse homes for sale</Link></div>
+        <div className="grid gap-6 lg:grid-cols-3">{propertiesForSale.map((property) => <PropertyCard key={property.id} property={property} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} preferredMeasurement={currentUser?.measurementUnit} />)}</div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
         <div className="mb-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-600">Popular locations</p>
-          <h2 className="mt-2 text-3xl font-bold text-slate-900">Explore high-demand areas</h2>
+          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">{t.popularCities}</p>
+          <h2 className="mt-2 text-3xl font-bold text-slate-900">Explore active property markets</h2>
         </div>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {popularLocations.map((place) => (
-            <div key={place.name} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <Link key={`${place.countryCode}-${place.name}`} href={`/properties/${toSlug(place.country)}/${toSlug(place.region)}/${toSlug(place.state)}`} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
               <Image src={place.image} alt={place.name} width={900} height={700} className="h-52 w-full object-cover" />
               <div className="flex items-center justify-between p-4">
                 <div>
@@ -178,9 +229,14 @@ export default async function HomePage() {
                 </div>
                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{place.listings} homes</span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+        <div className="mb-6"><p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">{t.popularCountries}</p><h2 className="mt-2 text-3xl font-bold text-slate-900">Markets around the world</h2></div>
+        <div className="flex flex-wrap gap-3">{popularCountryRecords.map((country) => <Link key={country.countryCode ?? country.country} href={country.countryCode ? `/search?countryCode=${country.countryCode}` : `/search?location=${encodeURIComponent(country.country)}`} className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 hover:border-emerald-700">{country.country}<span className="ml-2 text-slate-500">{country._count.properties}</span></Link>)}</div>
       </section>
 
       <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
@@ -241,31 +297,11 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
-        <div className="mb-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-600">Testimonials</p>
-          <h2 className="mt-2 text-3xl font-bold text-slate-900">What people are saying</h2>
-        </div>
-        <div className="grid gap-5 md:grid-cols-2">
-          {testimonials.map((item) => (
-            <blockquote key={item.name} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="mb-3 flex items-center gap-1 text-amber-400">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <Star key={index} size={15} fill="currentColor" />
-                ))}
-              </div>
-              <p className="text-lg text-slate-700">“{item.quote}”</p>
-              <footer className="mt-5 text-sm font-semibold text-slate-900">{item.name}</footer>
-            </blockquote>
-          ))}
-        </div>
-      </section>
-
       <footer className="mt-10 border-t border-slate-200 bg-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-4 lg:px-8">
           <div>
-            <p className="text-xl font-bold text-slate-900">Nigerian Homes</p>
-            <p className="mt-3 text-sm text-slate-600">The modern property marketplace for finding, financing, and managing homes across Nigeria.</p>
+            <p className="text-xl font-bold text-slate-900">Homes Worldwide</p>
+            <p className="mt-3 text-sm text-slate-600">A global place to discover homes, connect with local professionals, and explore new markets.</p>
           </div>
           <div>
             <p className="font-semibold text-slate-900">Explore</p>
@@ -286,12 +322,9 @@ export default async function HomePage() {
             </ul>
           </div>
           <div>
-            <p className="font-semibold text-slate-900">Nigeria</p>
+            <p className="font-semibold text-slate-900">Countries</p>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>Abuja</li>
-              <li>Lagos</li>
-              <li>Port Harcourt</li>
-              <li>Kano</li>
+              {popularCountryRecords.slice(0, 4).map((country) => <li key={country.countryCode}>{country.country}</li>)}
             </ul>
           </div>
         </div>

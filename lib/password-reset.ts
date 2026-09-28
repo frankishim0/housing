@@ -25,6 +25,10 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string) {
   if (!apiKey) {
     throw new Error('RESEND_API_KEY must be configured.');
   }
+  const from = process.env.EMAIL_FROM;
+  if (!from) {
+    throw new Error('EMAIL_FROM must be configured.');
+  }
 
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -33,11 +37,11 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'onboarding@resend.dev',
+      from,
       to: [email],
-      subject: 'Reset your Nigerian Homes password',
+      subject: 'Reset your Homes Worldwide password',
       text: `Use this link to reset your password: ${resetUrl}\n\nThis link expires in one hour and can only be used once.`,
-      html: `<p>Use the link below to reset your Nigerian Homes password.</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in one hour and can only be used once.</p>`,
+      html: `<p>Use the link below to reset your Homes Worldwide password.</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in one hour and can only be used once.</p>`,
     }),
     cache: 'no-store',
   });

@@ -1,5 +1,6 @@
 import { PrismaClient, ListingType, PropertyStatus, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { toSlug } from '@/lib/location';
 
 const prisma = new PrismaClient();
 
@@ -26,11 +27,13 @@ const propertyData = [
 ];
 
 async function main() {
+  await prisma.currency.upsert({ where: { code: 'NGN' }, create: { code: 'NGN', name: 'Nigerian naira' }, update: {} });
+  await prisma.country.upsert({ where: { code: 'NG' }, create: { code: 'NG', name: 'Nigeria', nativeCurrencyCode: 'NGN' }, update: { nativeCurrencyCode: 'NGN' } });
   const passwordHash = await bcrypt.hash('Password123!', 12);
   const owner = await prisma.user.upsert({
     where: { email: 'owner@example.com' },
-    update: { role: UserRole.OWNER, passwordHash },
-    create: { name: 'Demo Owner', email: 'owner@example.com', passwordHash, role: UserRole.OWNER },
+    update: { role: UserRole.OWNER, passwordHash, countryCode: 'NG', preferredCurrency: 'NGN' },
+    create: { name: 'Demo Owner', email: 'owner@example.com', passwordHash, role: UserRole.OWNER, countryCode: 'NG', preferredCurrency: 'NGN' },
   });
 
   await prisma.user.upsert({
@@ -41,12 +44,22 @@ async function main() {
 
   const locations = new Map<string, string>();
   for (const data of locationData) {
+    const region = await prisma.region.upsert({
+      where: { countryCode_name: { countryCode: 'NG', name: data.state } },
+      create: { id: `region-ng-${toSlug(data.state)}`, countryCode: 'NG', name: data.state },
+      update: {},
+    });
+    const city = await prisma.city.upsert({
+      where: { regionId_name: { regionId: region.id, name: data.city } },
+      create: { id: `city-ng-${toSlug(data.state)}-${toSlug(data.city)}`, countryCode: 'NG', regionId: region.id, name: data.city },
+      update: {},
+    });
     const location = await prisma.location.upsert({
       where: {
         id: `${data.city}-${data.area}`.toLowerCase().replaceAll(' ', '-'),
       },
-      update: data,
-      create: { ...data, id: `${data.city}-${data.area}`.toLowerCase().replaceAll(' ', '-') },
+      update: { ...data, countryCode: 'NG', regionId: region.id, cityId: city.id },
+      create: { ...data, id: `${data.city}-${data.area}`.toLowerCase().replaceAll(' ', '-'), countryCode: 'NG', regionId: region.id, cityId: city.id },
     });
     locations.set(data.area, location.id);
   }
@@ -55,9 +68,10 @@ async function main() {
     const { location, ...property } = data;
     await prisma.property.upsert({
       where: { slug: property.slug },
-      update: { ...property, status: PropertyStatus.PUBLISHED, publishedAt: new Date(), ownerId: owner.id, locationId: locations.get(location)! },
+      update: { ...property, currencyCode: 'NGN', status: PropertyStatus.PUBLISHED, publishedAt: new Date(), ownerId: owner.id, locationId: locations.get(location)! },
       create: {
         ...property,
+        currencyCode: 'NGN',
         description: `${property.title} with reliable power, water, security, and accessible amenities.`,
         status: PropertyStatus.PUBLISHED,
         publishedAt: new Date(),

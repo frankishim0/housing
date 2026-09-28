@@ -9,14 +9,28 @@ datasource db {
 
 enum UserRole {
   USER
+  TENANT
   OWNER
+  LANDLORD
   AGENT
+  PROPERTY_MANAGER
+  DEVELOPER
   ADMIN
 }
 
 enum ListingType {
   RENT
   SALE
+  SHORT_TERM_RENT
+  LONG_TERM_RENT
+  LEASE
+}
+
+enum MeasurementUnit {
+  SQUARE_METERS
+  SQUARE_FEET
+  ACRES
+  HECTARES
 }
 
 enum PropertyStatus {
@@ -33,6 +47,7 @@ enum PropertyStatus {
 enum MediaType {
   IMAGE
   VIDEO
+  DOCUMENT
 }
 
 enum EnquiryStatus {
@@ -65,6 +80,75 @@ enum PaymentType {
   RENT
   DEPOSIT
   PLATFORM_FEE
+  SALE
+  LEASE
+  SHORT_TERM_RENT
+}
+
+enum CommissionPayer {
+  SELLER
+  BUYER
+  SHARED
+}
+
+enum FinancialTransactionStatus {
+  QUOTED
+  PENDING_PAYMENT
+  PAID
+  FAILED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  DISPUTED
+  CANCELLED
+}
+
+enum PayoutStatus {
+  NOT_DUE
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  HELD
+}
+
+enum MonetizationProductType {
+  SUBSCRIPTION
+  FEATURED_LISTING
+  QUALIFIED_LEAD
+}
+
+enum BillingInterval {
+  ONE_TIME
+  MONTHLY
+  ANNUAL
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+enum MonetizationOrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum FinancialAuditAction {
+  COMMISSION_RULE_CREATED
+  COMMISSION_RULE_UPDATED
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  FINANCIAL_STATUS_CHANGED
+  REFUND_RECORDED
+  DISPUTE_UPDATED
+  PAYOUT_UPDATED
 }
 
 enum VerificationStatus {
@@ -74,6 +158,12 @@ enum VerificationStatus {
   SUSPENDED
 }
 
+enum UserVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+}
+
 enum NotificationType {
   ENQUIRY
   VIEWING
@@ -81,6 +171,22 @@ enum NotificationType {
   PROPERTY
   MESSAGE
   SYSTEM
+  CALL
+  LIVE_TOUR
+}
+
+enum CallType {
+  VIDEO_CALL
+  LIVE_TOUR
+}
+
+enum CallStatus {
+  RINGING
+  ACTIVE
+  ENDED
+  DECLINED
+  MISSED
+  CANCELLED
 }
 
 model User {
@@ -91,6 +197,15 @@ model User {
   phone             String?
   profileImage      String?
   role              UserRole                  @default(USER)
+  countryCode       String?                   @db.VarChar(2)
+  regionId          String?
+  cityId            String?
+  preferredCurrency String                    @default("NGN") @db.VarChar(3)
+  preferredLanguage String                    @default("en") @db.VarChar(12)
+  measurementUnit   MeasurementUnit           @default(SQUARE_METERS)
+  timeZone          String?                   @db.VarChar(80)
+  verificationStatus UserVerificationStatus   @default(UNVERIFIED)
+  lastSeenAt        DateTime?
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
   profile           Profile?
@@ -111,6 +226,25 @@ model User {
   authoredReviews   Review[]
   reports           Report[]
   passwordResetTokens PasswordResetToken[]
+  messageDeletions  MessageDeletion[]
+  country           Country?                  @relation("UserCountry", fields: [countryCode], references: [code], onDelete: SetNull)
+  region            Region?                    @relation("UserRegion", fields: [regionId], references: [id], onDelete: SetNull)
+  city              City?                     @relation("UserCity", fields: [cityId], references: [id], onDelete: SetNull)
+  preferredCurrencyData Currency               @relation("UserPreferredCurrency", fields: [preferredCurrency], references: [code], onDelete: Restrict)
+  callsStarted      CallSession[]              @relation("CallInitiator")
+  callParticipations CallParticipant[]
+  callMessages      CallChatMessage[]
+  financialTransactionsAsBuyer FinancialTransaction[] @relation("FinancialTransactionBuyer")
+  financialTransactionsAsSeller FinancialTransaction[] @relation("FinancialTransactionSeller")
+  financialTransactionsAsAgent FinancialTransaction[] @relation("FinancialTransactionAgent")
+  payouts            Payout[]
+  subscriptions      UserSubscription[]
+  featuredListings   FeaturedListing[]
+  purchasedLeads     LeadPurchase[]
+  financialAuditLogs FinancialAuditLog[]
+  createdRefunds     TransactionRefund[]
+
+  @@index([countryCode, regionId, cityId])
 }
 
 model Session {
@@ -156,11 +290,87 @@ model Location {
   city       String
   area       String
   address    String
+  postalCode String?
   latitude   Float?
   longitude  Float?
+  countryCode String?   @db.VarChar(2)
+  regionId   String?
+  cityId     String?
+  hideExactAddress Boolean @default(false)
+  countryRecord Country? @relation(fields: [countryCode], references: [code], onDelete: SetNull)
+  regionRecord Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  cityRecord  City?      @relation(fields: [cityId], references: [id], onDelete: SetNull)
   properties Property[]
 
   @@index([state, city, area])
+  @@index([countryCode, regionId, cityId])
+  @@index([latitude, longitude])
+}
+
+model Country {
+  code               String      @id @db.VarChar(2)
+  name               String
+  nativeCurrencyCode String?     @db.VarChar(3)
+  currency           Currency?   @relation("CountryCurrency", fields: [nativeCurrencyCode], references: [code], onDelete: SetNull)
+  regions            Region[]
+  locations          Location[]
+  users              User[]      @relation("UserCountry")
+  cities             City[]
+
+  @@index([name])
+}
+
+model Region {
+  id          String     @id @default(cuid())
+  countryCode String     @db.VarChar(2)
+  name        String
+  code        String?
+  country     Country    @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  cities      City[]
+  locations   Location[]
+  users       User[]      @relation("UserRegion")
+
+  @@unique([countryCode, name])
+  @@unique([countryCode, code])
+  @@index([countryCode])
+}
+
+model City {
+  id          String     @id @default(cuid())
+  countryCode String     @db.VarChar(2)
+  regionId    String
+  name        String
+  country     Country    @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  region      Region     @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  locations   Location[]
+  users       User[]     @relation("UserCity")
+
+  @@unique([regionId, name])
+  @@index([countryCode, name])
+}
+
+model Currency {
+  code          String     @id @db.VarChar(3)
+  name          String
+  minorUnits    Int        @default(2)
+  countries     Country[]  @relation("CountryCurrency")
+  properties    Property[]
+  payments      Payment[]
+  preferredBy   User[]     @relation("UserPreferredCurrency")
+  commissionRules CommissionRule[]
+  financialProducts MonetizationProduct[]
+  financialTransactions FinancialTransaction[]
+  payouts       Payout[]
+  refunds       TransactionRefund[]
+
+  @@index([name])
+}
+
+model PropertyType {
+  id         String     @id @default(cuid())
+  code       String     @unique
+  name       String
+  properties Property[]
 }
 
 model Property {
@@ -171,12 +381,22 @@ model Property {
   listingType   ListingType
   type          String
   price         Decimal           @db.Decimal(14, 2)
+  currencyCode  String            @default("NGN") @db.VarChar(3)
+  propertyTypeId String?
   bedrooms      Int
   bathrooms     Int
-  size          Int
+  size          Decimal           @db.Decimal(14, 2)
+  sizeUnit      MeasurementUnit   @default(SQUARE_METERS)
+  furnished     Boolean?
+  parkingSpaces Int?
+  hasPool       Boolean           @default(false)
+  hasSecurity   Boolean           @default(false)
+  yearBuilt     Int?
+  viewCount     Int               @default(0)
   status        PropertyStatus    @default(DRAFT)
   verified      Boolean           @default(false)
   featured      Boolean           @default(false)
+  luxury        Boolean           @default(false)
   publishedAt   DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -186,6 +406,8 @@ model Property {
   owner         User              @relation("OwnedProperties", fields: [ownerId], references: [id], onDelete: Restrict)
   agent         User?             @relation("ManagedProperties", fields: [agentId], references: [id], onDelete: SetNull)
   location      Location          @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  currency      Currency          @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  propertyType  PropertyType?     @relation(fields: [propertyTypeId], references: [id], onDelete: SetNull)
   media         PropertyMedia[]
   amenities     PropertyAmenity[]
   favorites     Favorite[]
@@ -198,9 +420,21 @@ model Property {
   tenants       Tenant[]
   verifications Verification[]
   reports       Report[]
+  callSessions  CallSession[]
+  financialTransactions FinancialTransaction[]
+  featuredListingOrders FeaturedListing[]
 
   @@index([status, listingType, type])
   @@index([price])
+  @@index([currencyCode, price])
+  @@index([propertyTypeId])
+  @@index([status, listingType, createdAt])
+  @@index([status, luxury, createdAt])
+  @@index([sizeUnit, size])
+  @@index([bedrooms, bathrooms])
+  @@index([yearBuilt])
+  @@index([furnished, hasPool, hasSecurity])
+  @@index([ownerId, viewCount])
   @@index([ownerId])
   @@index([agentId])
   @@index([locationId])
@@ -213,6 +447,11 @@ model PropertyMedia {
   type       MediaType
   isCover    Boolean   @default(false)
   order      Int       @default(0)
+  fileName   String?
+  mimeType   String?
+  size       Int?
+  publicId   String?
+  resourceType String?
   createdAt  DateTime  @default(now())
   property   Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
@@ -257,6 +496,7 @@ model SavedSearch {
 model Conversation {
   id           String                    @id @default(cuid())
   propertyId   String?
+  pairKey      String?                   @unique
   createdAt    DateTime                  @default(now())
   updatedAt    DateTime                  @updatedAt
   property     Property?                 @relation(fields: [propertyId], references: [id], onDelete: SetNull)
@@ -264,6 +504,7 @@ model Conversation {
   messages     Message[]
 
   @@index([propertyId])
+  @@index([updatedAt])
 }
 
 model ConversationParticipant {
@@ -282,11 +523,89 @@ model Message {
   conversationId String
   senderId       String
   content        String
+  replyToId      String?
+  readAt         DateTime?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  replyTo        Message?     @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        Message[]    @relation("MessageReplies")
+  attachments    MessageAttachment[]
+  deletions      MessageDeletion[]
 
   @@index([conversationId, createdAt])
+  @@index([conversationId, readAt])
+  @@index([replyToId])
+}
+
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileName  String
+  mimeType  String
+  size      Int
+  url       String
+  publicId  String?
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model CallSession {
+  id          String          @id @default(cuid())
+  propertyId  String
+  initiatorId String
+  roomName    String          @unique
+  type        CallType
+  status      CallStatus      @default(RINGING)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  initiator   User            @relation("CallInitiator", fields: [initiatorId], references: [id], onDelete: Restrict)
+  participants CallParticipant[]
+  messages    CallChatMessage[]
+
+  @@index([propertyId, status, createdAt])
+  @@index([initiatorId, createdAt])
+}
+
+model CallParticipant {
+  callId   String
+  userId   String
+  status   String   @default("INVITED")
+  joinedAt DateTime?
+  leftAt   DateTime?
+  call     CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([callId, userId])
+  @@index([userId, status])
+}
+
+model CallChatMessage {
+  id        String     @id @default(cuid())
+  callId    String
+  senderId  String
+  content   String
+  createdAt DateTime   @default(now())
+  call      CallSession @relation(fields: [callId], references: [id], onDelete: Cascade)
+  sender    User       @relation(fields: [senderId], references: [id], onDelete: Restrict)
+
+  @@index([callId, createdAt])
+}
+
+model MessageDeletion {
+  messageId String
+  userId    String
+  deletedAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@index([userId, deletedAt])
 }
 
 model Enquiry {
@@ -300,6 +619,7 @@ model Enquiry {
   updatedAt  DateTime      @updatedAt
   user       User          @relation("EnquirySeekers", fields: [userId], references: [id], onDelete: Restrict)
   property   Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  leadPurchases LeadPurchase[]
 
   @@index([propertyId, status])
   @@index([userId, createdAt])
@@ -326,18 +646,259 @@ model Payment {
   id          String        @id @default(cuid())
   userId      String
   propertyId  String?
-  amount      Decimal       @db.Decimal(14, 2)
+  amount      Decimal       @db.Decimal(14, 4)
   currency    String        @default("NGN")
+  provider    String        @default("PAYSTACK")
   reference   String        @unique
+  providerReference String?
+  processorTransactionId String? @unique
   status      PaymentStatus @default(PENDING)
   paymentType PaymentType
   paymentDate DateTime?
   createdAt   DateTime      @default(now())
   user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
   property    Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  currencyData Currency    @relation(fields: [currency], references: [code], onDelete: Restrict)
+  financialTransaction FinancialTransaction?
 
   @@index([userId, status])
   @@index([propertyId])
+}
+
+model PaymentWebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  eventType   String
+  outcome     String
+  receivedAt  DateTime @default(now())
+  processedAt DateTime @default(now())
+
+  @@index([eventType, processedAt])
+  @@map("StripeWebhookEvent")
+}
+
+model CommissionRule {
+  id                       String         @id @default(cuid())
+  name                     String
+  transactionType          PaymentType?
+  countryCode              String?        @db.VarChar(2)
+  propertyTypeCode         String?
+  currencyCode             String?        @db.VarChar(3)
+  percentageRate           Decimal        @default(0) @db.Decimal(7, 4)
+  fixedFee                 Decimal        @default(0) @db.Decimal(14, 4)
+  processingFeeRate        Decimal        @default(0) @db.Decimal(7, 4)
+  processingFeeFixed       Decimal        @default(0) @db.Decimal(14, 4)
+  payer                    CommissionPayer @default(SELLER)
+  active                   Boolean        @default(true)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  currency                 Currency?      @relation(fields: [currencyCode], references: [code], onDelete: SetNull)
+  transactions             FinancialTransaction[]
+
+  @@index([active, transactionType, countryCode, propertyTypeCode, currencyCode])
+}
+
+model FinancialTransaction {
+  id                       String                     @id @default(cuid())
+  reference                String                     @unique
+  buyerId                  String
+  sellerId                 String
+  agentId                  String?
+  propertyId               String?
+  paymentId                String?                    @unique
+  commissionRuleId         String?
+  transactionType          PaymentType
+  status                   FinancialTransactionStatus @default(QUOTED)
+  amount                   Decimal                    @db.Decimal(14, 4)
+  currencyCode             String                     @db.VarChar(3)
+  countryCode              String?                    @db.VarChar(2)
+  commissionPayer          CommissionPayer            @default(SELLER)
+  commissionRate           Decimal                    @default(0) @db.Decimal(7, 4)
+  commissionFixedFee       Decimal                    @default(0) @db.Decimal(14, 4)
+  platformCommission       Decimal                    @default(0) @db.Decimal(14, 4)
+  buyerPlatformFee          Decimal                    @default(0) @db.Decimal(14, 4)
+  sellerCommission          Decimal                    @default(0) @db.Decimal(14, 4)
+  processingFeeRate         Decimal                    @default(0) @db.Decimal(7, 4)
+  processingFeeFixed        Decimal                    @default(0) @db.Decimal(14, 4)
+  paymentProcessingFee       Decimal                    @default(0) @db.Decimal(14, 4)
+  totalBuyerDue              Decimal                    @default(0) @db.Decimal(14, 4)
+  sellerAmount              Decimal                    @default(0) @db.Decimal(14, 4)
+  finalPayout               Decimal                    @default(0) @db.Decimal(14, 4)
+  payoutStatus              PayoutStatus               @default(NOT_DUE)
+  payoutDueAt               DateTime?
+  paidAt                    DateTime?
+  refundedAt                DateTime?
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  buyer                     User                       @relation("FinancialTransactionBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller                    User                       @relation("FinancialTransactionSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  agent                     User?                      @relation("FinancialTransactionAgent", fields: [agentId], references: [id], onDelete: SetNull)
+  property                  Property?                  @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  payment                   Payment?                   @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  commissionRule            CommissionRule?            @relation(fields: [commissionRuleId], references: [id], onDelete: SetNull)
+  currency                  Currency                   @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  payouts                   Payout[]
+  refunds                   TransactionRefund[]
+  disputes                  TransactionDispute[]
+
+  @@index([buyerId, createdAt])
+  @@index([sellerId, payoutStatus, createdAt])
+  @@index([agentId, payoutStatus, createdAt])
+  @@index([propertyId, createdAt])
+  @@index([status, currencyCode, createdAt])
+  @@index([paidAt, currencyCode])
+}
+
+model Payout {
+  id            String       @id @default(cuid())
+  transactionId String
+  recipientId   String
+  amount        Decimal      @db.Decimal(14, 4)
+  currencyCode  String       @db.VarChar(3)
+  status        PayoutStatus @default(PENDING)
+  provider      String?
+  providerReference String?
+  failureReason String?
+  requestedAt   DateTime     @default(now())
+  completedAt   DateTime?
+  updatedAt     DateTime     @updatedAt
+  transaction   FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  recipient     User         @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+  currency      Currency     @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+
+  @@index([recipientId, status, requestedAt])
+  @@index([transactionId])
+}
+
+model TransactionRefund {
+  id            String       @id @default(cuid())
+  transactionId String
+  amount        Decimal       @db.Decimal(14, 4)
+  currencyCode  String       @db.VarChar(3)
+  reason        String
+  status        MonetizationOrderStatus @default(PENDING)
+  providerReference String?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+  transaction   FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  currency      Currency     @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  createdBy     User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([transactionId, status, createdAt])
+}
+
+model TransactionDispute {
+  id            String       @id @default(cuid())
+  transactionId String
+  providerReference String?
+  status        String       @default("OPEN")
+  reason        String?
+  resolution    String?
+  createdAt     DateTime     @default(now())
+  resolvedAt    DateTime?
+  transaction   FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@unique([transactionId])
+}
+
+model MonetizationProduct {
+  id            String                  @id @default(cuid())
+  code          String                  @unique
+  name          String
+  description   String
+  type          MonetizationProductType
+  billingInterval BillingInterval       @default(ONE_TIME)
+  price         Decimal                 @db.Decimal(14, 4)
+  currencyCode  String                  @db.VarChar(3)
+  durationDays  Int?
+  listingLimit  Int?
+  features      Json                    @default("[]")
+  active        Boolean                 @default(true)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  currency      Currency                @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  subscriptions UserSubscription[]
+  promotions    FeaturedListing[]
+  leads         LeadPurchase[]
+
+  @@index([type, active, currencyCode])
+}
+
+model UserSubscription {
+  id                  String            @id @default(cuid())
+  userId              String
+  productId           String
+  status              SubscriptionStatus @default(PENDING)
+  billingInterval     BillingInterval
+  priceAtPurchase     Decimal           @db.Decimal(14, 4)
+  currencyCode        String            @db.VarChar(3)
+  provider            String?
+  providerReference   String?
+  startedAt           DateTime?
+  currentPeriodEnd    DateTime?
+  cancelledAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  user                User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  product             MonetizationProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status, currentPeriodEnd])
+}
+
+model FeaturedListing {
+  id                String              @id @default(cuid())
+  propertyId        String
+  purchaserId       String
+  productId         String
+  status            MonetizationOrderStatus @default(PENDING)
+  priceAtPurchase   Decimal             @db.Decimal(14, 4)
+  currencyCode      String              @db.VarChar(3)
+  startsAt          DateTime?
+  expiresAt         DateTime?
+  providerReference String?
+  createdAt         DateTime            @default(now())
+  property          Property            @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  purchaser         User                @relation(fields: [purchaserId], references: [id], onDelete: Restrict)
+  product           MonetizationProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([propertyId, status, expiresAt])
+  @@index([purchaserId, status, createdAt])
+}
+
+model LeadPurchase {
+  id                String              @id @default(cuid())
+  purchaserId       String
+  productId         String
+  enquiryId         String
+  status            MonetizationOrderStatus @default(PENDING)
+  priceAtPurchase   Decimal             @db.Decimal(14, 4)
+  currencyCode      String              @db.VarChar(3)
+  providerReference String?
+  createdAt         DateTime            @default(now())
+  purchaser         User                @relation(fields: [purchaserId], references: [id], onDelete: Restrict)
+  product           MonetizationProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  enquiry           Enquiry             @relation(fields: [enquiryId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaserId, enquiryId])
+  @@index([purchaserId, status, createdAt])
+}
+
+model FinancialAuditLog {
+  id          String              @id @default(cuid())
+  actorId     String?
+  action      FinancialAuditAction
+  entityType  String
+  entityId    String
+  before      Json?
+  after       Json?
+  reason      String
+  createdAt   DateTime            @default(now())
+  actor       User?               @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
 }
 
 model Tenant {

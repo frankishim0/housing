@@ -1,18 +1,22 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { FormEvent, Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<main className="mx-auto flex min-h-screen max-w-xl items-center justify-center px-4 py-12">Loading password reset…</main>}>
+      <ResetPasswordForm />
+    </Suspense>
+  );
+}
+
+function ResetPasswordForm() {
   const router = useRouter();
-  const [token, setToken] = useState('');
+  const token = useSearchParams().get('token') ?? '';
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    setToken(new URLSearchParams(window.location.search).get('token') ?? '');
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
