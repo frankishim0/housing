@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:monetization": "tsx tests/monetization.test.ts && tsx tests/paystack.test.ts",
+    "test": "npm run test:monetization",
+    "test:monetization": "tsx tests/monetization.test.ts && tsx tests/paystack.test.ts && tsx tests/paystack-synthetic.test.ts && tsx tests/mock-payments.test.ts && tsx tests/payouts.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts"

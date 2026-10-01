@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { amountToMinorUnits, VerifiedPayment } from '@/lib/payments';
 import { PaymentPurchase, PaymentWebhookRepository, processVerifiedPayment } from '@/lib/payment-webhook';
+import { createPayoutRecordForPaidTransaction, isPayoutsEnabled } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 
 type TransactionClient = Prisma.TransactionClient;
@@ -34,7 +35,7 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
           data: { outcome: String(outcome), processedAt: new Date() },
         });
         return outcome;
-      });
+      }, { maxWait: 10_000, timeout: 20_000 });
       return { duplicate: false, result };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -48,19 +49,19 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
     }
   },
 
-  async findPurchase(tx, reference): Promise<PaymentPurchase | null> {
+  async findPurchase(tx, reference, providerCode): Promise<PaymentPurchase | null> {
     const payment = await tx.payment.findUnique({
       where: { reference },
       include: { financialTransaction: true, currencyData: { select: { minorUnits: true } } },
     });
-    if (!payment || payment.provider !== 'PAYSTACK') return null;
+    if (!payment || payment.provider !== providerCode) return null;
 
     if (payment.financialTransaction) {
       const transaction = payment.financialTransaction;
       const amountMinor = amountToMinorUnits(transaction.totalBuyerDue.toString(), payment.currencyData.minorUnits);
       if (amountMinor !== amountToMinorUnits(payment.amount.toString(), payment.currencyData.minorUnits)
         || payment.currency !== transaction.currencyCode) {
-        throw new Error('Stored Paystack payment does not match the financial transaction quote.');
+        throw new Error(`Stored ${providerCode} payment does not match the financial transaction quote.`);
       }
       return {
         kind: 'TRANSACTION',
@@ -80,7 +81,7 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
       const amountMinor = amountToMinorUnits(subscription.priceAtPurchase.toString(), payment.currencyData.minorUnits);
       if (amountMinor !== amountToMinorUnits(payment.amount.toString(), payment.currencyData.minorUnits)
         || payment.currency !== subscription.currencyCode) {
-        throw new Error('Stored Paystack payment does not match the subscription purchase.');
+        throw new Error(`Stored ${providerCode} payment does not match the subscription purchase.`);
       }
       return {
         kind: 'SUBSCRIPTION',
@@ -100,7 +101,7 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
       const amountMinor = amountToMinorUnits(listing.priceAtPurchase.toString(), payment.currencyData.minorUnits);
       if (amountMinor !== amountToMinorUnits(payment.amount.toString(), payment.currencyData.minorUnits)
         || payment.currency !== listing.currencyCode) {
-        throw new Error('Stored Paystack payment does not match the featured-listing purchase.');
+        throw new Error(`Stored ${providerCode} payment does not match the featured-listing purchase.`);
       }
       return {
         kind: 'FEATURED_LISTING',
@@ -121,7 +122,8 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
     const abandoned = payment.status === 'abandoned';
     const paymentStatus = successful ? PaymentStatus.SUCCESSFUL : PaymentStatus.FAILED;
     const paymentRecord = await tx.payment.findUnique({ where: { reference: purchase.reference } });
-    if (!paymentRecord || paymentRecord.provider !== 'PAYSTACK') return;
+    if (!paymentRecord || (paymentRecord.provider !== 'PAYSTACK' && paymentRecord.provider !== 'MOCK')) return;
+    const providerCode = paymentRecord.provider;
 
     if (purchase.kind === 'TRANSACTION') {
       const status = successful
@@ -134,10 +136,13 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
         data: {
           status,
           paymentId: paymentRecord.id,
-          ...(successful ? { paidAt: payment.paidAt ?? new Date(), payoutStatus: 'NOT_DUE' as const } : {}),
+          ...(successful ? { paidAt: payment.paidAt ?? new Date() } : {}),
         },
       });
       if (updated.count !== 1) return;
+      if (successful && providerCode === 'PAYSTACK' && isPayoutsEnabled()) {
+        await createPayoutRecordForPaidTransaction(tx, purchase.id, payment.paidAt ?? new Date());
+      }
       await tx.payment.update({
         where: { id: paymentRecord.id },
         data: {
@@ -156,11 +161,11 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
           before: { status: purchase.status },
           after: {
             status,
-            paymentProvider: 'PAYSTACK',
-            paystackReference: payment.reference,
-            paystackTransactionId: payment.transactionId,
+            paymentProvider: providerCode,
+            providerReference: payment.reference,
+            providerTransactionId: payment.transactionId,
           },
-          reason: `Paystack test-mode payment verification processed (${payment.status}).`,
+          reason: `${providerCode} test-mode payment verification processed (${payment.status}).`,
         },
       });
       return;
@@ -178,7 +183,7 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
               status: SubscriptionStatus.ACTIVE,
               startedAt: now,
               currentPeriodEnd: addBillingInterval(now, subscription.billingInterval),
-              provider: 'PAYSTACK',
+              provider: providerCode,
               providerReference: payment.reference,
             }
           : { status: abandoned ? SubscriptionStatus.CANCELLED : SubscriptionStatus.FAILED },
@@ -227,16 +232,20 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
         before: { status: purchase.status },
         after: {
           status: successful ? 'PAID' : abandoned ? 'CANCELLED' : 'FAILED',
-          paymentProvider: 'PAYSTACK',
-          paystackReference: payment.reference,
-          paystackTransactionId: payment.transactionId,
+          paymentProvider: providerCode,
+          providerReference: payment.reference,
+          providerTransactionId: payment.transactionId,
         },
-        reason: `Paystack test-mode payment verification processed (${payment.status}).`,
+        reason: `${providerCode} test-mode payment verification processed (${payment.status}).`,
       },
     });
   },
 };
 
 export function processPaystackPayment(payment: VerifiedPayment) {
-  return processVerifiedPayment(payment, repository);
+  return processVerifiedPayment(payment, repository, 'PAYSTACK');
+}
+
+export function processMockPayment(payment: VerifiedPayment) {
+  return processVerifiedPayment(payment, repository, 'MOCK');
 }

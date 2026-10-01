@@ -18,24 +18,25 @@ export interface PaymentWebhookRepository<Tx> {
     eventType: string,
     action: (tx: Tx) => Promise<T>,
   ): Promise<{ duplicate: boolean; result?: T }>;
-  findPurchase(tx: Tx, reference: string): Promise<PaymentPurchase | null>;
+  findPurchase(tx: Tx, reference: string, providerCode: string): Promise<PaymentPurchase | null>;
   settlePurchase(tx: Tx, purchase: PaymentPurchase, payment: VerifiedPayment): Promise<void>;
 }
 
 export async function processVerifiedPayment<Tx>(
   payment: VerifiedPayment,
   repository: PaymentWebhookRepository<Tx>,
+  providerCode = 'PAYSTACK',
 ) {
-  const eventId = `PAYSTACK:${payment.transactionId}:${payment.status}`;
-  return repository.runOnce(eventId, `payment.${payment.status}`, async (tx) => {
-    const purchase = await repository.findPurchase(tx, payment.reference);
+  const eventId = `${providerCode}:${payment.transactionId}:${payment.status}`;
+  return repository.runOnce(eventId, `${providerCode.toLowerCase()}.payment.${payment.status}`, async (tx) => {
+    const purchase = await repository.findPurchase(tx, payment.reference, providerCode);
     if (!purchase) return 'purchase_not_found';
     if (purchase.providerReference && purchase.providerReference !== payment.reference) {
-      throw new Error('Paystack reference does not match the server-side payment.');
+      throw new Error(`${providerCode} reference does not match the server-side payment.`);
     }
     if (payment.amountMinor !== purchase.amountMinor
       || payment.currency.toUpperCase() !== purchase.currency.toUpperCase()) {
-      throw new Error('Paystack amount or currency does not match the server-side purchase.');
+      throw new Error(`${providerCode} amount or currency does not match the server-side purchase.`);
     }
 
     if (purchase.status === 'PAID' || purchase.status === 'ACTIVE') return 'purchase_already_paid';

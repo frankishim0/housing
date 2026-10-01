@@ -25,9 +25,35 @@ export async function POST(request: NextRequest, context: RouteContext<'/api/tra
       const created = await tx.transactionDispute.create({
         data: { transactionId: transaction.id, reason: parsed.data.reason },
       });
+      const payouts = await tx.payout.findMany({
+        where: { transactionId: transaction.id, status: { in: ['PENDING', 'FAILED'] } },
+        select: { id: true, status: true, approvedAt: true },
+      });
+      if (payouts.length > 0) {
+        await tx.payout.updateMany({
+          where: { id: { in: payouts.map((payout) => payout.id) }, status: { in: ['PENDING', 'FAILED'] } },
+          data: { status: 'HELD', approvedAt: null, approvedById: null },
+        });
+        for (const payout of payouts) {
+          await tx.financialAuditLog.create({
+            data: {
+              actorId: user.id,
+              action: FinancialAuditAction.PAYOUT_UPDATED,
+              entityType: 'Payout',
+              entityId: payout.id,
+              before: { status: payout.status, approvedAt: payout.approvedAt?.toISOString() ?? null },
+              after: { status: 'HELD', approvedAt: null },
+              reason: `Payout held for dispute ${created.id}; administrator review is required before release.`,
+            },
+          });
+        }
+      }
       await tx.financialTransaction.update({
         where: { id: transaction.id },
-        data: { status: FinancialTransactionStatus.DISPUTED },
+        data: {
+          status: FinancialTransactionStatus.DISPUTED,
+          ...(payouts.length > 0 ? { payoutStatus: 'HELD' } : {}),
+        },
       });
       await tx.financialAuditLog.create({
         data: {

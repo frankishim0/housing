@@ -76,7 +76,7 @@ export function MonetizationOffers({ properties }: { properties: Array<{ id: str
   return (
     <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6">
       <h2 className="text-xl font-bold text-slate-900">Plans and promotion offers</h2>
-      <p className="mt-1 text-sm text-slate-500">Paystack test mode only. Plans and promotions activate only after payment verification; no live charges, automatic subscription renewals, or payouts are enabled.</p>
+      <p className="mt-1 text-sm text-slate-500">Test mode only. Plans and promotions activate only after verified test payment; no live charges, automatic subscription renewals, or payouts are enabled.</p>
       {error && <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {status && <p role="status" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{status}</p>}
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -92,7 +92,7 @@ export function MonetizationOffers({ properties }: { properties: Array<{ id: str
             <option value="">Choose a published property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.title}</option>)}
           </select>}
           {product.type === 'QUALIFIED_LEAD' ? <p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Lead orders will be available after consent and qualification workflows are configured.</p> : <button type="button" disabled={pending === product.id || (product.type === 'FEATURED_LISTING' && !selectedProperties[product.id])} onClick={() => void createOrder(product)} className="mt-4 w-full rounded-full bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-            {pending === product.id || checkoutPending === product.id ? 'Opening Paystack test payment…' : product.type === 'SUBSCRIPTION' ? 'Choose plan' : 'Request promotion'}
+            {pending === product.id || checkoutPending === product.id ? 'Opening test checkout…' : product.type === 'SUBSCRIPTION' ? 'Choose plan' : 'Request promotion'}
           </button>}
         </article>)}
         {offers.length === 0 && <p className="text-sm text-slate-500">No active subscription or promotion offers have been configured.</p>}

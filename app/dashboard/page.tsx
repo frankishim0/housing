@@ -116,6 +116,7 @@ export default async function DashboardPage() {
                 <p className="mt-1 text-sm text-slate-500">Amounts are shown in each transaction&apos;s original currency. A quote is not a payment or a completed sale.</p>
               </div>
               <Link href="/dashboard/transactions" className="rounded-full border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800">Payment history and receipts</Link>
+              <Link href="/dashboard/payouts" className="rounded-full border border-indigo-700 px-4 py-2 text-sm font-semibold text-indigo-800">Payout bank account</Link>
             </div>
             {isProfessional && <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {financialTotals.map((item) => <div key={`${item.currencyCode}-${item.status}`} className="rounded-2xl border border-slate-200 bg-white p-4">

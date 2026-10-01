@@ -33,8 +33,32 @@ export interface PaymentProvider {
 
 const paystackCurrencies = new Set(['NGN', 'GHS', 'KES', 'ZAR', 'XOF', 'USD']);
 const checkoutBodySchema = z.object({}).strict();
+const currencyCodePattern = /^[A-Z]{3}$/;
 
 export class UnsupportedPaymentProviderError extends Error {}
+
+export function isLocalMockPaymentsEnabled() {
+  return process.env.NODE_ENV !== 'production'
+    && process.env.PAYMENT_PROVIDER === 'MOCK'
+    && process.env.MOCK_PAYMENTS_ENABLED === 'true';
+}
+
+export function getLocalMockDatabaseUrl() {
+  if (!isLocalMockPaymentsEnabled()) throw new Error('Local mock payments are disabled.');
+  const databaseUrl = process.env.MOCK_DATABASE_URL;
+  if (!databaseUrl) throw new Error('MOCK_DATABASE_URL must point to a separate local sandbox database.');
+  let parsed: URL;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new Error('MOCK_DATABASE_URL is invalid.');
+  }
+  const localHosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+  if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !localHosts.has(parsed.hostname)) {
+    throw new Error('MOCK_DATABASE_URL must use PostgreSQL on localhost; mock payments cannot use a remote database.');
+  }
+  return databaseUrl;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -73,6 +97,27 @@ export function assertPaystackTestConfiguration() {
   getPaystackTestPublicKey();
   getPaystackWebhookSecret();
   getApplicationUrl();
+}
+
+export function assertTestPaymentProviderConfiguration(providerCode: string) {
+  if (providerCode === 'MOCK') {
+    if (!isLocalMockPaymentsEnabled()) {
+      throw new Error('Local mock payments are disabled.');
+    }
+    getMockPaymentWebhookSecret();
+    return;
+  }
+  if (providerCode !== 'PAYSTACK') throw new Error('Unsupported test payment provider.');
+  assertPaystackTestConfiguration();
+}
+
+export function getMockPaymentWebhookSecret() {
+  if (!isLocalMockPaymentsEnabled()) throw new Error('Local mock payments are disabled.');
+  const secret = process.env.MOCK_PAYMENT_WEBHOOK_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('MOCK_PAYMENT_WEBHOOK_SECRET must contain at least 32 characters.');
+  }
+  return secret;
 }
 
 export function amountToMinorUnits(amount: string, minorUnits: number) {
@@ -118,7 +163,8 @@ async function readPaystackResponse(response: Response) {
 export class PaystackProvider implements PaymentProvider {
   readonly code = 'PAYSTACK';
 
-  supports(currencyCode: string) {
+  supports(currencyCode: string, _countryCode?: string | null) {
+    void _countryCode;
     return paystackCurrencies.has(currencyCode.toUpperCase());
   }
 
@@ -182,9 +228,45 @@ export class PaystackProvider implements PaymentProvider {
   }
 }
 
-const providers: PaymentProvider[] = [new PaystackProvider()];
+export class LocalMockPaymentProvider implements PaymentProvider {
+  readonly code = 'MOCK';
 
-export function getPaymentProvider(currencyCode: string, countryCode?: string | null) {
+  supports(currencyCode: string, _countryCode?: string | null) {
+    void _countryCode;
+    return currencyCodePattern.test(currencyCode.toUpperCase());
+  }
+
+  async initialize(input: {
+    email: string;
+    amountMinor: number;
+    currency: string;
+    reference: string;
+    callbackUrl: string;
+    purchaseType: 'TRANSACTION' | 'SUBSCRIPTION' | 'FEATURED_LISTING';
+  }): Promise<PaymentInitialization> {
+    if (!isLocalMockPaymentsEnabled()) throw new Error('Local mock payments are disabled.');
+    getMockPaymentWebhookSecret();
+    if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0) {
+      throw new Error('Mock payment requires a positive amount in currency minor units.');
+    }
+    const origin = new URL(input.callbackUrl).origin;
+    const authorizationUrl = new URL('/payments/mock', origin);
+    authorizationUrl.searchParams.set('reference', input.reference);
+    return { authorizationUrl: authorizationUrl.toString(), reference: input.reference };
+  }
+
+  async verify(_reference: string): Promise<VerifiedPayment> {
+    void _reference;
+    throw new Error('Local mock payments are settled only through the signed mock webhook flow.');
+  }
+}
+
+export function getPaymentProvider(currencyCode: string, countryCode?: string | null): PaymentProvider {
+  if (isLocalMockPaymentsEnabled()) {
+    const mockProvider = new LocalMockPaymentProvider();
+    if (mockProvider.supports(currencyCode, countryCode)) return mockProvider;
+  }
+  const providers: PaymentProvider[] = [new PaystackProvider()];
   const provider = providers.find((candidate) => candidate.supports(currencyCode, countryCode));
   if (!provider) {
     throw new UnsupportedPaymentProviderError(
@@ -197,6 +279,17 @@ export function getPaymentProvider(currencyCode: string, countryCode?: string | 
 export function verifyPaystackWebhookSignature(rawBody: string, signature: string, secret: string) {
   if (!/^[a-f\d]{128}$/i.test(signature)) return false;
   const expected = createHmac('sha512', secret).update(rawBody).digest();
+  const provided = Buffer.from(signature, 'hex');
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+export function signMockPaymentWebhook(rawBody: string, secret = getMockPaymentWebhookSecret()) {
+  return createHmac('sha256', secret).update(rawBody).digest('hex');
+}
+
+export function verifyMockPaymentWebhookSignature(rawBody: string, signature: string, secret: string) {
+  if (!/^[a-f\d]{64}$/i.test(signature)) return false;
+  const expected = createHmac('sha256', secret).update(rawBody).digest();
   const provided = Buffer.from(signature, 'hex');
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }

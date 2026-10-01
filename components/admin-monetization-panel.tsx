@@ -34,7 +34,7 @@ type ProductForm = {
   durationDays: string; listingLimit: string; features: string; active: boolean; reason: string;
 };
 
-const emptyRule: RuleForm = { name: '', transactionType: '', countryCode: '', propertyTypeCode: '', currencyCode: '', percentageRate: '0', fixedFee: '0', processingFeeRate: '0', processingFeeFixed: '0', payer: 'SELLER', active: true, reason: '' };
+const emptyRule: RuleForm = { name: 'Default buyer-paid 2% property transaction fee', transactionType: 'SALE', countryCode: '', propertyTypeCode: '', currencyCode: '', percentageRate: '2', fixedFee: '0', processingFeeRate: '0', processingFeeFixed: '0', payer: 'BUYER', active: true, reason: '' };
 const emptyProduct: ProductForm = { code: '', name: '', description: '', type: 'SUBSCRIPTION', billingInterval: 'MONTHLY', price: '0', currencyCode: 'USD', durationDays: '', listingLimit: '', features: '', active: true, reason: '' };
 const fieldClass = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm';
 
@@ -198,6 +198,7 @@ export function AdminMonetizationPanel() {
       <div className="grid gap-6 xl:grid-cols-2">
         <form onSubmit={(event) => void save(event, 'commissionRule')} className="space-y-3 rounded-3xl border border-slate-200 bg-white p-6">
           <h3 className="text-xl font-bold text-slate-900">Commission rules</h3>
+          <p className="text-sm text-slate-600">The default sales and rental rules charge a 2% platform fee to the buyer. Configure each transaction type here; fixed and payment-processing fees default to zero.</p>
           <select value={selectedRuleId} onChange={(event) => selectRule(event.target.value)} className={fieldClass}><option value="">Create a commission rule</option>{data?.commissionRules.map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? '' : ' (inactive)'}</option>)}</select>
           <input required placeholder="Rule name" value={rule.name} onChange={(event) => setRule({ ...rule, name: event.target.value })} className={fieldClass} />
           <div className="grid gap-3 sm:grid-cols-2">

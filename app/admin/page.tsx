@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { AdminMonetizationPanel } from '@/components/admin-monetization-panel';
+import { AdminPayoutsPanel } from '@/components/admin-payouts-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ export default async function AdminPage() {
         ].map(([label, value]) => <div key={label} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-3xl font-bold text-slate-900">{value}</p><p className="mt-1 text-sm text-slate-500">{label}</p></div>)}
       </div>
       <AdminMonetizationPanel />
+      <AdminPayoutsPanel />
     </main>
   );
 }

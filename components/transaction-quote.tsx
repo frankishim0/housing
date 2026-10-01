@@ -87,7 +87,7 @@ export function TransactionQuote({ propertyId }: { propertyId: string }) {
           <button type="button" onClick={() => void startCheckout()} disabled={checkoutPending || quote.status === 'PAID' || quote.status === 'FAILED' || quote.status === 'CANCELLED'} className="w-full rounded-full bg-indigo-700 px-4 py-3 font-semibold text-white disabled:opacity-60">
             {checkoutPending ? 'Opening secure Paystack test payment…' : quote.status === 'PENDING_PAYMENT' ? 'Continue Paystack test payment' : 'Pay securely with Paystack test mode'}
           </button>
-          <p className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-900">Test mode only. Use Paystack test payment details. This payment cannot charge a real card or settle a payout.</p>
+          <p className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-900">Test mode only. Use Paystack test payment details (or the local payment simulator if Paystack test mode is unavailable for this listing&apos;s currency). This payment cannot charge a real card or settle a payout.</p>
           <p className="rounded-xl bg-white/70 p-3 text-xs text-slate-600">Quote {quote.reference} is server-priced; payment becomes final only after Paystack verifies the payment or a signed webhook is received.</p>
           {!quote.commissionRuleName && <p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">No commission rule is configured for this listing, so this quote currently applies no platform commission. The platform administrator can configure country, currency, property-type, and transaction-specific rules.</p>}
         </dl>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPaystackWebhookSecret, PaystackProvider, verifyPaystackWebhookSignature } from '@/lib/payments';
 import { processPaystackPayment } from '@/lib/paystack-purchases';
+import { isPaystackTransferEvent, isPayoutsEnabled, processTransferWebhookEvent } from '@/lib/payouts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,18 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid Paystack webhook payload.' }, { status: 400 });
   }
+
+  if (isPaystackTransferEvent(event)) {
+    if (!isPayoutsEnabled()) return NextResponse.json({ received: true, ignored: true, reason: 'payouts_disabled' });
+    try {
+      const result = await processTransferWebhookEvent(event);
+      return NextResponse.json({ received: true, duplicate: result.duplicate, outcome: result.outcome });
+    } catch (error) {
+      console.error('Paystack transfer webhook processing failure:', error instanceof Error ? error.message : 'Unknown error');
+      return NextResponse.json({ error: 'Paystack transfer webhook processing failed; delivery may be retried.' }, { status: 500 });
+    }
+  }
+
   if (!isPaystackEvent(event)) return NextResponse.json({ error: 'Invalid Paystack webhook payload.' }, { status: 400 });
   if (event.event !== 'charge.success' && event.event !== 'charge.failed') {
     return NextResponse.json({ received: true, ignored: true });

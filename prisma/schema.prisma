@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -109,6 +110,13 @@ enum PayoutStatus {
   PAID
   FAILED
   HELD
+}
+
+enum PayoutAccountStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  DISABLED
 }
 
 enum MonetizationProductType {
@@ -243,6 +251,8 @@ model User {
   purchasedLeads     LeadPurchase[]
   financialAuditLogs FinancialAuditLog[]
   createdRefunds     TransactionRefund[]
+  payoutAccount      PayoutAccount?
+  approvedPayouts    Payout[]                  @relation("PayoutApprover")
 
   @@index([countryCode, regionId, cityId])
 }
@@ -362,8 +372,33 @@ model Currency {
   financialTransactions FinancialTransaction[]
   payouts       Payout[]
   refunds       TransactionRefund[]
+  payoutAccounts PayoutAccount[]
 
   @@index([name])
+}
+
+model PayoutAccount {
+  id                  String              @id @default(cuid())
+  userId              String              @unique
+  countryCode         String              @db.VarChar(2)
+  currencyCode        String              @db.VarChar(3)
+  bankCode            String
+  bankName            String
+  accountNumberLast4  String              @db.VarChar(4)
+  accountNumberCipher String
+  accountName         String
+  provider            String              @default("PAYSTACK")
+  recipientCode       String?             @unique
+  status              PayoutAccountStatus @default(PENDING)
+  verifiedAt          DateTime?
+  disabledAt          DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency            Currency            @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  payouts             Payout[]
+
+  @@index([status, createdAt])
 }
 
 model PropertyType {
@@ -750,24 +785,35 @@ model FinancialTransaction {
 }
 
 model Payout {
-  id            String       @id @default(cuid())
-  transactionId String
-  recipientId   String
-  amount        Decimal      @db.Decimal(14, 4)
-  currencyCode  String       @db.VarChar(3)
-  status        PayoutStatus @default(PENDING)
-  provider      String?
-  providerReference String?
-  failureReason String?
-  requestedAt   DateTime     @default(now())
-  completedAt   DateTime?
-  updatedAt     DateTime     @updatedAt
-  transaction   FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
-  recipient     User         @relation(fields: [recipientId], references: [id], onDelete: Restrict)
-  currency      Currency     @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  id                  String       @id @default(cuid())
+  transactionId       String       @unique
+  recipientId         String
+  payoutAccountId     String?
+  amount              Decimal      @db.Decimal(14, 4)
+  currencyCode        String       @db.VarChar(3)
+  status              PayoutStatus @default(PENDING)
+  provider            String?
+  providerReference   String?      @unique
+  transferCode        String?      @unique
+  processorTransferId String?      @unique
+  approvedAt          DateTime?
+  approvedById        String?
+  failureReason       String?
+  attempts            Int          @default(0)
+  lastAttemptAt       DateTime?
+  nextRetryAt         DateTime?
+  requestedAt         DateTime     @default(now())
+  completedAt         DateTime?
+  updatedAt           DateTime     @updatedAt
+  transaction         FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  recipient           User         @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+  approvedBy          User?        @relation("PayoutApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  currency            Currency     @relation(fields: [currencyCode], references: [code], onDelete: Restrict)
+  payoutAccount       PayoutAccount? @relation(fields: [payoutAccountId], references: [id], onDelete: SetNull)
 
   @@index([recipientId, status, requestedAt])
-  @@index([transactionId])
+  @@index([status, nextRetryAt])
+  @@index([status, approvedAt])
 }
 
 model TransactionRefund {

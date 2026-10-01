@@ -37,6 +37,26 @@ assert.equal(shared.buyerPlatformFee, '0.2500');
 assert.equal(shared.sellerCommission, '0.2500');
 assert.equal(shared.totalBuyerDue, '10.2500');
 
+const defaultPropertyTransaction = calculateCommission({
+  amount: '6500000',
+  percentageRate: '2',
+  fixedFee: '0',
+  processingFeeRate: '0',
+  processingFeeFixed: '0',
+  payer: CommissionPayer.BUYER,
+  minorUnits: 2,
+});
+assert.deepEqual(defaultPropertyTransaction, {
+  amount: '6500000.0000',
+  platformCommission: '130000.0000',
+  buyerPlatformFee: '130000.0000',
+  sellerCommission: '0.0000',
+  paymentProcessingFee: '0.0000',
+  totalBuyerDue: '6630000.0000',
+  sellerAmount: '6500000.0000',
+  finalPayout: '6500000.0000',
+});
+
 const zeroDecimalCurrency = calculateCommission({
   amount: '10.49',
   percentageRate: '0',

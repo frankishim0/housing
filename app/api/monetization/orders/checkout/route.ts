@@ -11,7 +11,7 @@ import {
 } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
-import { amountToMinorUnits, assertPaystackTestConfiguration, getApplicationUrl, getPaymentProvider, UnsupportedPaymentProviderError } from '@/lib/payments';
+import { amountToMinorUnits, assertTestPaymentProviderConfiguration, getApplicationUrl, getPaymentProvider, UnsupportedPaymentProviderError } from '@/lib/payments';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     const amount = isSubscription ? subscription!.priceAtPurchase : featuredListing!.priceAtPurchase;
     const billingInterval = isSubscription ? subscription!.billingInterval : BillingInterval.ONE_TIME;
     const provider = getPaymentProvider(currencyCode);
-    assertPaystackTestConfiguration();
+    assertTestPaymentProviderConfiguration(provider.code);
     const appUrl = getApplicationUrl();
     if (isSubscription && billingInterval !== BillingInterval.MONTHLY && billingInterval !== BillingInterval.ANNUAL) {
       return NextResponse.json({ error: 'Paid subscription plans must use a monthly or annual billing interval.' }, { status: 409 });
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
           entityType: orderType === 'SUBSCRIPTION' ? 'UserSubscription' : 'FeaturedListing',
           entityId: purchaseReference,
           after: { status: 'PENDING_PAYMENT', provider: provider.code, mode: 'test', paymentId: created.id },
-          reason: 'User initiated a Paystack test-mode payment.',
+          reason: `User initiated a ${provider.code} test-mode payment.`,
         },
       });
       return created;
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (payment.providerReference) {
-      return NextResponse.json({ error: 'A Paystack payment was already initialized for this order. Create a new order to start another payment.' }, { status: 409 });
+      return NextResponse.json({ error: 'A payment was already initialized for this order. Create a new order to start another payment.' }, { status: 409 });
     }
 
     const claimed = await prisma.payment.updateMany({
@@ -122,8 +122,8 @@ export async function POST(request: NextRequest) {
           action: FinancialAuditAction.FINANCIAL_STATUS_CHANGED,
           entityType: orderType === 'SUBSCRIPTION' ? 'UserSubscription' : 'FeaturedListing',
           entityId: purchaseReference,
-          after: { paystackReference: initialized.reference, mode: 'test' },
-          reason: 'Paystack test-mode payment was initialized.',
+          after: { paymentReference: initialized.reference, provider: provider.code, mode: 'test' },
+          reason: `${provider.code} test-mode payment was initialized.`,
         },
       });
     });
@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return NextResponse.json({ error: 'A payment attempt for this order already exists. Refresh the order and retry.' }, { status: 409 });
     }
-    console.error('Paystack monetization payment initialization failed:', error instanceof Error ? error.message : 'Unknown error');
-    return NextResponse.json({ error: 'Test-mode payment is unavailable. Check Paystack test credentials, currency support, and APP_URL.' }, { status: 503 });
+    console.error('Test monetization payment initialization failed:', error instanceof Error ? error.message : 'Unknown error');
+    return NextResponse.json({ error: 'Test-mode payment is unavailable. Check the selected provider configuration, currency support, and APP_URL.' }, { status: 503 });
   }
 }

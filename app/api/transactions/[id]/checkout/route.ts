@@ -1,7 +1,7 @@
 import { FinancialTransactionStatus, PaymentStatus, PaymentType, Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
-import { amountToMinorUnits, assertPaystackTestConfiguration, getApplicationUrl, getPaymentProvider, parseCheckoutBody, UnsupportedPaymentProviderError } from '@/lib/payments';
+import { amountToMinorUnits, assertTestPaymentProviderConfiguration, getApplicationUrl, getPaymentProvider, parseCheckoutBody, UnsupportedPaymentProviderError } from '@/lib/payments';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request, context: RouteContext<'/api/transactions/[id]/checkout'>) {
@@ -25,7 +25,7 @@ export async function POST(request: Request, context: RouteContext<'/api/transac
       return NextResponse.json({ error: 'The listing price or availability changed. Request a new transaction quote.' }, { status: 409 });
     }
     const provider = getPaymentProvider(transaction.currencyCode, transaction.countryCode);
-    assertPaystackTestConfiguration();
+    assertTestPaymentProviderConfiguration(provider.code);
     const appUrl = getApplicationUrl();
 
     if (transaction.status === FinancialTransactionStatus.QUOTED) {
@@ -60,7 +60,7 @@ export async function POST(request: Request, context: RouteContext<'/api/transac
             entityId: transaction!.id,
             before: { status: FinancialTransactionStatus.QUOTED },
             after: { status: FinancialTransactionStatus.PENDING_PAYMENT, provider: provider.code, mode: 'test', paymentId: payment.id },
-            reason: 'Buyer initiated a Paystack test-mode payment.',
+            reason: `Buyer initiated a ${provider.code} test-mode payment.`,
           },
         });
         return tx.financialTransaction.findUniqueOrThrow({
@@ -74,10 +74,10 @@ export async function POST(request: Request, context: RouteContext<'/api/transac
 
     const payment = transaction.payment;
     if (!payment || payment.provider !== provider.code || payment.status !== PaymentStatus.PENDING) {
-      return NextResponse.json({ error: 'There is no pending Paystack payment for this quote.' }, { status: 409 });
+      return NextResponse.json({ error: 'There is no pending test payment for this quote.' }, { status: 409 });
     }
     if (payment.providerReference) {
-      return NextResponse.json({ error: 'A Paystack payment was already initialized for this quote. Request a fresh quote to start another payment.' }, { status: 409 });
+      return NextResponse.json({ error: 'A payment was already initialized for this quote. Request a fresh quote to start another payment.' }, { status: 409 });
     }
 
     const claimed = await prisma.payment.updateMany({
@@ -105,8 +105,8 @@ export async function POST(request: Request, context: RouteContext<'/api/transac
           action: 'FINANCIAL_STATUS_CHANGED',
           entityType: 'FinancialTransaction',
           entityId: transaction!.id,
-          after: { paystackReference: initialized.reference, mode: 'test' },
-          reason: 'Paystack test-mode payment was initialized.',
+          after: { paymentReference: initialized.reference, provider: provider.code, mode: 'test' },
+          reason: `${provider.code} test-mode payment was initialized.`,
         },
       });
     });
@@ -121,7 +121,7 @@ export async function POST(request: Request, context: RouteContext<'/api/transac
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return NextResponse.json({ error: 'This quote already has a payment attempt. Refresh and continue its payment flow.' }, { status: 409 });
     }
-    console.error('Paystack test payment initialization failed:', error instanceof Error ? error.message : 'Unknown error');
-    return NextResponse.json({ error: 'Test-mode payment is unavailable. Check Paystack test credentials, currency support, and APP_URL.' }, { status: 503 });
+    console.error('Test payment initialization failed:', error instanceof Error ? error.message : 'Unknown error');
+    return NextResponse.json({ error: 'Test-mode payment is unavailable. Check the selected provider configuration, currency support, and APP_URL.' }, { status: 503 });
   }
 }
