@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { z } from 'zod';
-
-const conversationSchema = z.object({
-  propertyId: z.string().min(1),
-  recipientId: z.string().min(1),
-  content: z.string().trim().max(5000).optional(),
-});
+import { buildConversationPairKey, canStartPropertyConversation, startConversationSchema } from '@/lib/messaging';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const conversationInclude = {
   property: {
@@ -39,7 +34,11 @@ const conversationInclude = {
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-  const parsed = conversationSchema.safeParse(await request.json().catch(() => null));
+  const rate = checkRateLimit(`conversation:start:${user.id}`, 10, 60_000);
+  if (!rate.allowed) {
+    return NextResponse.json({ error: 'Too many conversation requests. Please wait a moment and try again.' }, { status: 429 });
+  }
+  const parsed = startConversationSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   if (parsed.data.recipientId === user.id) return NextResponse.json({ error: 'Invalid recipient.' }, { status: 400 });
 
@@ -61,15 +60,20 @@ export async function POST(request: NextRequest) {
   if (!property || !recipient || ['DRAFT', 'SUSPENDED'].includes(property.status)) {
     return NextResponse.json({ error: 'Property or recipient not found.' }, { status: 404 });
   }
-  const isPropertyContact = [property.ownerId, property.agentId].includes(recipient.id);
-  const mayContactBuyer = [property.ownerId, property.agentId].includes(user.id)
-    && ['USER', 'TENANT'].includes(recipient.role)
-    && (property.enquiries.length > 0 || property.viewings.length > 0);
-  if (!isPropertyContact && !mayContactBuyer) {
+  const authorized = canStartPropertyConversation({
+    requesterId: user.id,
+    recipientId: recipient.id,
+    ownerId: property.ownerId,
+    agentId: property.agentId,
+    recipientRole: recipient.role,
+    hasEnquiry: property.enquiries.length > 0,
+    hasViewing: property.viewings.length > 0,
+  });
+  if (!authorized) {
     return NextResponse.json({ error: 'Recipient is not associated with this property.' }, { status: 400 });
   }
 
-  const pairKey = `${property.id}:${[user.id, recipient.id].sort().join(':')}`;
+  const pairKey = buildConversationPairKey(property.id, user.id, recipient.id);
   let conversation = await prisma.conversation.findUnique({ where: { pairKey }, select: { id: true } });
   let created = false;
 

@@ -159,7 +159,8 @@ export default async function DashboardPage() {
           <div className="mt-5 space-y-3">
             <Link href="/messages" className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">Messages <MessageSquareText size={16} /></Link>
             <Link href="/dashboard/profile" className="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100">Global profile settings</Link>
-            {['Viewings', 'Enquiries', 'Payments', 'Analytics'].map((action) => (
+            <Link href="/dashboard/viewings" className="block rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">Property viewings</Link>
+            {['Enquiries', 'Payments', 'Analytics'].map((action) => (
               <Link key={action} href="/search" className="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100">{action}</Link>
             ))}
           </div>

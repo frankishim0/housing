@@ -3,21 +3,9 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { classifyUpload, verifyCloudinaryUpload, verifyUploadTicket } from '@/lib/cloudinary';
 import { publishRealtimeEvent } from '@/lib/realtime';
+import { sendMessageSchema } from '@/lib/messaging';
+import { checkRateLimit } from '@/lib/rate-limit';
 import { z } from 'zod';
-
-const messageSchema = z.object({
-  content: z.string().trim().max(5000).default(''),
-  replyToId: z.string().min(1).optional(),
-  attachment: z.object({
-    ticket: z.string().min(1),
-    fileName: z.string().min(1).max(180),
-    mimeType: z.string().max(120),
-    size: z.number().int().positive(),
-    secureUrl: z.url().startsWith('https://'),
-    publicId: z.string().min(1).max(500),
-    resourceType: z.enum(['image', 'video', 'raw']),
-  }).optional(),
-}).refine((value) => value.content.length > 0 || Boolean(value.attachment), 'A message or attachment is required.');
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
@@ -25,9 +13,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const conversationId = (await params).id;
   const participant = await prisma.conversationParticipant.findUnique({ where: { conversationId_userId: { conversationId, userId: user.id } } });
   if (!participant) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
-  const parsed = messageSchema.safeParse(await request.json().catch(() => null));
+  const rate = checkRateLimit(`message:send:${user.id}`, 20, 60_000);
+  if (!rate.allowed) {
+    return NextResponse.json({ error: 'You are sending messages too quickly. Please wait a moment and try again.' }, { status: 429 });
+  }
+  const parsed = sendMessageSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  let attachment: z.infer<typeof messageSchema>['attachment'] = undefined;
+  let attachment: z.infer<typeof sendMessageSchema>['attachment'] = undefined;
   if (parsed.data.attachment) {
     const candidate = parsed.data.attachment;
     const ticket = verifyUploadTicket(candidate.ticket, { userId: user.id, purpose: { kind: 'message', conversationId } });

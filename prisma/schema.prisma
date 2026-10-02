@@ -664,6 +664,7 @@ model Viewing {
   id            String        @id @default(cuid())
   propertyId    String
   requesterId   String
+  scheduledAt   DateTime?
   preferredDate DateTime
   preferredTime String
   message       String?
@@ -674,6 +675,7 @@ model Viewing {
   requester     User          @relation("ViewingRequesters", fields: [requesterId], references: [id], onDelete: Restrict)
 
   @@index([propertyId, preferredDate, preferredTime])
+  @@index([propertyId, scheduledAt, status])
   @@index([requesterId, status])
 }
 
