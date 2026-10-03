@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ad
     return NextResponse.json({ error: unauthenticated ? 'Authentication required.' : 'Admin role required.' }, { status: unauthenticated ? 401 : 403 });
   }
 
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { id } = await context.params;
 

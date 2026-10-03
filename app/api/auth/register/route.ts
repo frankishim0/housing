@@ -6,9 +6,12 @@ import { registerSchema } from '@/lib/validation';
 import { getCurrencyName, getCountryCurrency } from '@/lib/international';
 import { getName } from 'country-list';
 import { toSlug } from '@/lib/location';
+import { enforceRateLimits, getClientIp, readJsonBody } from '@/lib/http';
 
 export async function POST(request: NextRequest) {
-  const parsed = registerSchema.safeParse(await request.json());
+  const limited = enforceRateLimits([{ key: `register:ip:${getClientIp(request)}`, limit: 10, windowMs: 60 * 60 * 1000 }]);
+  if (limited) return limited;
+  const parsed = registerSchema.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }

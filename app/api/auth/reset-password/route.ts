@@ -3,9 +3,12 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { hashPasswordResetToken } from '@/lib/password-reset';
 import { resetPasswordSchema } from '@/lib/validation';
+import { enforceRateLimits, getClientIp, readJsonBody } from '@/lib/http';
 
 export async function POST(request: NextRequest) {
-  const parsed = resetPasswordSchema.safeParse(await request.json());
+  const limited = enforceRateLimits([{ key: `reset:ip:${getClientIp(request)}`, limit: 20, windowMs: 60 * 60 * 1000 }]);
+  if (limited) return limited;
+  const parsed = resetPasswordSchema.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: 'The reset link or password is invalid.' }, { status: 400 });
   }

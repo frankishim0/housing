@@ -35,7 +35,7 @@ export async function POST(request: Request, context: RouteContext<'/api/admin/p
   }
 
   const { id } = await context.params;
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
@@ -93,6 +93,6 @@ export async function POST(request: Request, context: RouteContext<'/api/admin/p
     return NextResponse.json({ data: result });
   } catch (error) {
     console.error('Admin payout action failed:', error instanceof Error ? error.message : 'Unknown error');
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Payout action failed.' }, { status: 502 });
+    return NextResponse.json({ error: 'Payout action failed.' }, { status: 502 });
   }
 }

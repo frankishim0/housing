@@ -14,7 +14,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (user.id !== enquiry.userId && user.id !== enquiry.property.ownerId && user.id !== enquiry.property.agentId) {
     return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
   }
-  const parsed = statusSchema.safeParse(await request.json());
+  const parsed = statusSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const updated = await prisma.enquiry.update({ where: { id: enquiry.id }, data: { status: parsed.data.status } });
   return NextResponse.json({ data: updated });

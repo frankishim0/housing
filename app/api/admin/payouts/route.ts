@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Seller payouts are disabled. Set PAYOUTS_ENABLED=true to enable this test-mode-only feature.' }, { status: 503 });
   }
 
-  const parsed = actionSchema.safeParse(await request.json());
+  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const created = await createEligiblePayouts();

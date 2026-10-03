@@ -7,12 +7,13 @@ import { prisma } from '@/lib/prisma';
 import { canSubmitPropertyVerification } from '@/lib/verification';
 import { propertyMediaDeliveryType } from '@/lib/property-media-security';
 import { isAllowedForMediaScope } from '@/lib/property-media-upload';
+import { enforceRateLimits } from '@/lib/http';
 
 const schema = z.object({
   purpose: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('property'), propertyId: z.string().min(1), mediaScope: z.enum(['creation', 'visual']) }),
     z.object({ kind: z.literal('message'), conversationId: z.string().min(1) }),
-    z.object({ kind: z.literal('verification'), verificationType: z.string().min(1), propertyId: z.string().min(1).optional() }),
+    z.object({ kind: z.literal('verification'), verificationType: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), propertyId: z.string().min(1).optional() }),
   ]),
   fileName: z.string().trim().min(1).max(240),
   mimeType: z.string().trim().max(120),
@@ -22,6 +23,8 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+  const limited = enforceRateLimits([{ key: `upload-sign:${user.id}`, limit: 60, windowMs: 10 * 60 * 1000 }]);
+  if (limited) return limited;
 
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });

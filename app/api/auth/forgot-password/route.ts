@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createPasswordResetToken, getPasswordResetUrl, PASSWORD_RESET_TTL_MS, sendPasswordResetEmail } from '@/lib/password-reset';
 import { forgotPasswordSchema } from '@/lib/validation';
+import { enforceRateLimits, getClientIp, readJsonBody } from '@/lib/http';
+
+const WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
-  const parsed = forgotPasswordSchema.safeParse(await request.json());
+  const limited = enforceRateLimits([{ key: `forgot:ip:${getClientIp(request)}`, limit: 10, windowMs: WINDOW_MS }]);
+  if (limited) return limited;
+  const parsed = forgotPasswordSchema.safeParse(await readJsonBody(request));
   if (!parsed.success) {
     return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 });
   }
+  const emailLimited = enforceRateLimits([{ key: `forgot:email:${parsed.data.email}`, limit: 3, windowMs: WINDOW_MS }]);
+  if (emailLimited) return emailLimited;
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
   if (!user) {

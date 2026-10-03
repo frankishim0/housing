@@ -10,7 +10,7 @@ const schema = z.object({ reason: z.string().trim().min(10).max(2000) });
 export async function POST(request: NextRequest, context: RouteContext<'/api/transactions/[id]/disputes'>) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { id } = await context.params;
 

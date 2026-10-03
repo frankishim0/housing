@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Seller payouts are disabled.' }, { status: 503 });
   }
 
-  const parsed = schema.safeParse(await request.json());
+  const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { countryCode, currencyCode, bankCode, bankName, accountNumber } = parsed.data;
   if (!isCurrencyCode(currencyCode)) {
