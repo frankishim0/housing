@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
 import { presentProperty, PROPERTY_WITH_RELATIONS_INCLUDE } from '@/lib/property-presenter';
+import { canViewNonPublicProperty, isPubliclyVisibleStatus } from '@/lib/property-lifecycle';
 import { FavoriteButton } from '@/components/favorite-button';
 import { PropertyContactActions } from '@/components/property-contact-actions';
 import { CurrencyPrice } from '@/components/currency-price';
@@ -18,10 +19,14 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const property = await prisma.property.findFirst({
-    where: { OR: [{ slug }, { id: slug }], status: { notIn: ['DRAFT', 'SUSPENDED'] } },
-    select: { title: true, description: true, slug: true, media: { where: { type: 'IMAGE' }, orderBy: { isCover: 'desc' }, take: 1, select: { url: true } } },
+    where: { OR: [{ slug }, { id: slug }] },
+    select: { title: true, description: true, slug: true, status: true, ownerId: true, agentId: true, media: { where: { type: 'IMAGE' }, orderBy: { isCover: 'desc' }, take: 1, select: { url: true } } },
   });
   if (!property) return { title: 'Property not found | Homes Worldwide' };
+  if (!isPubliclyVisibleStatus(property.status)) {
+    const user = await getSessionUser();
+    if (!canViewNonPublicProperty(user, property)) return { title: 'Property not found | Homes Worldwide' };
+  }
   const url = process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, '')}/properties/${property.slug}` : undefined;
   return {
     title: `${property.title} | Homes Worldwide`,
@@ -33,7 +38,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function PropertyDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const propertyRecord = await prisma.property.findFirst({
-    where: { OR: [{ slug: (await params).slug }, { id: (await params).slug }], status: { notIn: ['DRAFT', 'SUSPENDED'] } },
+    where: { OR: [{ slug: (await params).slug }, { id: (await params).slug }] },
     include: PROPERTY_WITH_RELATIONS_INCLUDE,
   });
 
@@ -41,6 +46,9 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
     notFound();
   }
   const currentUser = await getSessionUser();
+  if (!isPubliclyVisibleStatus(propertyRecord.status) && !canViewNonPublicProperty(currentUser, propertyRecord)) {
+    notFound();
+  }
   if (!currentUser || ![propertyRecord.ownerId, propertyRecord.agentId].includes(currentUser.id)) {
     await prisma.property.update({ where: { id: propertyRecord.id }, data: { viewCount: { increment: 1 } } });
   }

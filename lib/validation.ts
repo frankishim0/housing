@@ -91,7 +91,7 @@ export const propertySearchSchema = z.object({
   longitude: z.preprocess(blankAsUndefined, z.coerce.number().min(-180).max(180).optional()),
   radiusKm: z.preprocess(blankAsUndefined, z.coerce.number().positive().max(500).optional()),
   view: z.preprocess(blankAsUndefined, z.enum(['list', 'map']).default('list')),
-  availability: z.enum(['PUBLISHED', 'PAUSED', 'RENTED', 'SOLD']).optional(),
+  availability: z.enum(['PUBLISHED', 'RENTED', 'SOLD']).optional(),
   sort: z.enum(['newest', 'price_asc', 'price_desc']).default('newest'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(12),
@@ -105,3 +105,29 @@ export const propertySearchSchema = z.object({
   path: ['sizeUnit'],
   message: 'Select a measurement unit when filtering by size.',
 });
+
+/**
+ * Fields an owner/agent/admin may edit through the property PATCH endpoint.
+ * `.strict()` rejects any other key in the request body (for example ownerId,
+ * agentId, verified, or verifiedAt), so protected fields can never be
+ * client-controlled even if a caller tries to smuggle them in.
+ */
+export const propertyUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(160).optional(),
+  description: z.string().trim().min(1).max(5000).optional(),
+  type: z.string().trim().min(1).max(100).optional(),
+  price: z.coerce.number().positive().optional(),
+  bedrooms: z.coerce.number().int().min(0).optional(),
+  bathrooms: z.coerce.number().int().min(0).optional(),
+  size: z.coerce.number().positive().optional(),
+  parkingSpaces: z.coerce.number().int().min(0).nullable().optional(),
+  yearBuilt: z.coerce.number().int().min(1000).max(new Date().getFullYear()).nullable().optional(),
+  listingType: z.enum(['RENT', 'SALE', 'SHORT_TERM_RENT', 'LONG_TERM_RENT', 'LEASE']).optional(),
+  sizeUnit: z.enum(['SQUARE_METERS', 'SQUARE_FEET', 'ACRES', 'HECTARES']).optional(),
+  furnished: z.boolean().nullable().optional(),
+  hasPool: z.boolean().optional(),
+  hasSecurity: z.boolean().optional(),
+  luxury: z.boolean().optional(),
+  currencyCode: currencyCodeSchema.optional(),
+  status: z.enum(['DRAFT', 'PENDING_REVIEW', 'REJECTED', 'PUBLISHED', 'PAUSED', 'RENTED', 'SOLD', 'SUSPENDED']).optional(),
+}).strict();
