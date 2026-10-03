@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         location: true,
-        media: { where: { type: { not: 'DOCUMENT' } }, orderBy: { order: 'asc' } },
+        media: { where: { type: { not: 'DOCUMENT' } }, orderBy: [{ order: 'asc' }, { id: 'asc' }] },
         amenities: true,
         owner: { select: { id: true, name: true, profileImage: true, role: true, verificationStatus: true } },
         agent: { select: { id: true, name: true, profileImage: true, role: true, verificationStatus: true } },

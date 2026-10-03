@@ -1,33 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { getCloudinaryConfig, getCloudinaryDeliveryType, signCloudinaryParams } from '@/lib/cloudinary';
+import { canManagePropertyMedia, canSelectMediaAsCover, getCoverAfterMediaDeletion } from '@/lib/property-media-management';
 import { prisma } from '@/lib/prisma';
 
-async function authorize(propertyId: string, userId: string) {
-  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { ownerId: true, agentId: true } });
-  return Boolean(property && [property.ownerId, property.agentId].includes(userId));
+async function lockProperty(transaction: Prisma.TransactionClient, propertyId: string) {
+  await transaction.$queryRaw`SELECT "id" FROM "Property" WHERE "id" = ${propertyId} FOR UPDATE`;
+  return transaction.property.findUnique({
+    where: { id: propertyId },
+    select: { ownerId: true, agentId: true },
+  });
 }
 
 export async function PATCH(_request: NextRequest, { params }: { params: Promise<{ id: string; mediaId: string }> }) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-  const { id, mediaId } = await params;
-  if (!await authorize(id, user.id)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
-  const media = await prisma.propertyMedia.findFirst({ where: { id: mediaId, propertyId: id, type: 'IMAGE' }, select: { id: true } });
-  if (!media) return NextResponse.json({ error: 'Image not found.' }, { status: 404 });
-  await prisma.$transaction([
-    prisma.propertyMedia.updateMany({ where: { propertyId: id, type: 'IMAGE' }, data: { isCover: false } }),
-    prisma.propertyMedia.update({ where: { id: mediaId }, data: { isCover: true } }),
-  ]);
+  const { id: propertyId, mediaId } = await params;
+  const result = await prisma.$transaction(async (transaction) => {
+    const property = await lockProperty(transaction, propertyId);
+    if (!property || !canManagePropertyMedia(user.id, property)) return { status: 403 as const };
+    const media = await transaction.propertyMedia.findFirst({
+      where: { id: mediaId, propertyId },
+      select: { id: true, type: true },
+    });
+    if (!media || !canSelectMediaAsCover(media.type)) return { status: 404 as const };
+
+    await transaction.propertyMedia.updateMany({ where: { propertyId }, data: { isCover: false } });
+    await transaction.propertyMedia.update({ where: { id: mediaId }, data: { isCover: true } });
+    return { status: 200 as const };
+  });
+  if (result.status !== 200) {
+    return NextResponse.json({ error: result.status === 403 ? 'Forbidden.' : 'Image not found.' }, { status: result.status });
+  }
   return NextResponse.json({ data: { id: mediaId, isCover: true } });
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; mediaId: string }> }) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-  const { id, mediaId } = await params;
-  if (!await authorize(id, user.id)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
-  const media = await prisma.propertyMedia.findFirst({ where: { id: mediaId, propertyId: id } });
+  const { id: propertyId, mediaId } = await params;
+  const initialProperty = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { ownerId: true, agentId: true },
+  });
+  if (!initialProperty || !canManagePropertyMedia(user.id, initialProperty)) {
+    return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+  }
+  const media = await prisma.propertyMedia.findFirst({ where: { id: mediaId, propertyId } });
   if (!media) return NextResponse.json({ error: 'Media not found.' }, { status: 404 });
 
   if (media.publicId && media.resourceType) {
@@ -56,6 +76,25 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     }
   }
 
-  await prisma.propertyMedia.delete({ where: { id: mediaId } });
+  const deleted = await prisma.$transaction(async (transaction) => {
+    const property = await lockProperty(transaction, propertyId);
+    if (!property || !canManagePropertyMedia(user.id, property)) return 'forbidden' as const;
+    const currentMedia = await transaction.propertyMedia.findFirst({ where: { id: mediaId, propertyId } });
+    if (!currentMedia) return 'missing' as const;
+    const remaining = await transaction.propertyMedia.findMany({
+      where: { propertyId },
+      select: { id: true, type: true, order: true, isCover: true },
+    });
+    const nextCoverId = getCoverAfterMediaDeletion(remaining, mediaId);
+    await transaction.propertyMedia.delete({ where: { id: mediaId } });
+    await transaction.propertyMedia.updateMany({ where: { propertyId }, data: { isCover: false } });
+    if (nextCoverId) {
+      await transaction.propertyMedia.update({ where: { id: nextCoverId }, data: { isCover: true } });
+    }
+    return 'deleted' as const;
+  });
+  if (deleted !== 'deleted') {
+    return NextResponse.json({ error: deleted === 'forbidden' ? 'Forbidden.' : 'Media not found.' }, { status: deleted === 'forbidden' ? 403 : 404 });
+  }
   return NextResponse.json({ data: { id: mediaId, deleted: true } });
 }

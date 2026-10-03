@@ -21,7 +21,7 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
     include: {
       location: true,
       amenities: { orderBy: { name: 'asc' } },
-      media: { orderBy: [{ isCover: 'desc' }, { order: 'asc' }], select: { id: true, url: true, type: true, fileName: true, isCover: true } },
+      media: { orderBy: [{ order: 'asc' }, { id: 'asc' }], select: { id: true, url: true, type: true, fileName: true, isCover: true, order: true } },
     },
   });
   if (!property) notFound();
@@ -79,7 +79,7 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
         <PropertyMediaManager
           propertyId={property.id}
           canUpload
-          media={property.media.map(({ id, url, type, fileName, isCover }) => ({ id, type, fileName, isCover, url: type === 'DOCUMENT' ? undefined : url }))}
+          media={property.media.map(({ id, url, type, fileName, isCover, order }) => ({ id, type, fileName, isCover, order, url: type === 'DOCUMENT' ? undefined : url }))}
         />
       )}
       {!isAdmin && actions.length > 0 && (

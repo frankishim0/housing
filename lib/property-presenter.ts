@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { Property as UiProperty } from '@/lib/types';
+import { sortPublicMedia } from '@/lib/property-media-management';
 
 export const PROPERTY_WITH_RELATIONS_INCLUDE = {
   location: true,
@@ -12,7 +13,8 @@ export const PROPERTY_WITH_RELATIONS_INCLUDE = {
 export type PropertyWithRelations = Prisma.PropertyGetPayload<{ include: typeof PROPERTY_WITH_RELATIONS_INCLUDE }>;
 
 export function presentProperty(property: PropertyWithRelations, favorite = false): UiProperty {
-  const media = [...property.media].sort((a, b) => Number(b.isCover) - Number(a.isCover) || a.order - b.order);
+  const media = sortPublicMedia(property.media);
+  const images = media.filter((item) => item.type === 'IMAGE');
   const owner = property.agent ?? property.owner;
   const status =
     property.status === 'RENTED' ? 'Rented' :
@@ -53,8 +55,8 @@ export function presentProperty(property: PropertyWithRelations, favorite = fals
     verifiedAt: property.verifiedAt?.toISOString() ?? null,
     featured: property.featured,
     favorite,
-    image: media.find((item) => item.isCover && item.type === 'IMAGE')?.url ?? media.find((item) => item.type === 'IMAGE')?.url ?? 'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?auto=format&fit=crop&w=1200&q=80',
-    images: media.filter((item) => item.type === 'IMAGE').map((item) => item.url),
+    image: images.find((item) => item.isCover)?.url ?? images[0]?.url ?? 'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?auto=format&fit=crop&w=1200&q=80',
+    images: images.map((item) => item.url),
     amenities: property.amenities.map((item) => item.name),
     tag: property.verified ? 'Verified' : 'New',
     owner: {

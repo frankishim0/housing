@@ -26,7 +26,6 @@ export type AttachMediaDeps = {
     deliveryType: string;
   } | null;
   verifyUpload: (input: Pick<Upload, 'publicId' | 'resourceType' | 'secureUrl' | 'mimeType' | 'size'> & { deliveryType: 'upload' | 'authenticated' }) => Promise<boolean>;
-  countMedia: (propertyId: string) => Promise<number>;
   createMedia: (data: {
     propertyId: string;
     url: string;
@@ -36,7 +35,6 @@ export type AttachMediaDeps = {
     size: number;
     publicId: string;
     resourceType: string;
-    order: number;
   }) => Promise<unknown>;
 };
 
@@ -71,7 +69,6 @@ export async function attachPropertyMedia(deps: AttachMediaDeps, propertyId: str
     size: parsed.data.size,
     publicId: parsed.data.publicId,
     resourceType: parsed.data.resourceType,
-    order: await deps.countMedia(propertyId),
   });
   return { status: 201, body: { data: media } };
 }

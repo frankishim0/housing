@@ -4,9 +4,8 @@ import { classifyVisualUpload, isAllowedForMediaScope, validateVisualUpload } fr
 
 type Created = Parameters<AttachMediaDeps['createMedia']>[0];
 
-function setup(opts: { user?: { id: string } | null; existing?: number; ticketMime?: string; ticketResource?: string; delivery?: 'upload' | 'authenticated'; ticketScope?: 'creation' | 'visual'; verified?: boolean } = {}) {
+function setup(opts: { user?: { id: string } | null; ticketMime?: string; ticketResource?: string; delivery?: 'upload' | 'authenticated'; ticketScope?: 'creation' | 'visual'; verified?: boolean } = {}) {
   const created: Created[] = [];
-  const calls = { updates: 0 };
   const deps: AttachMediaDeps = {
     getUser: async () => (opts.user === undefined ? { id: 'owner' } : opts.user),
     findProperty: async (id) => (id === 'p1' ? { id, ownerId: 'owner', agentId: 'agent' } : null),
@@ -17,10 +16,9 @@ function setup(opts: { user?: { id: string } | null; existing?: number; ticketMi
       deliveryType: opts.delivery ?? 'upload',
     }) : null,
     verifyUpload: async () => opts.verified ?? true,
-    countMedia: async () => opts.existing ?? 3,
     createMedia: async (data) => { created.push(data); return { id: 'm', ...data, isCover: false }; },
   };
-  return { deps, created, calls };
+  return { deps, created };
 }
 
 const body = (over: Record<string, unknown> = {}) => ({
@@ -41,23 +39,21 @@ async function main() {
   // missing property
   assert.equal((await attachPropertyMedia(setup().deps, 'nope', body())).status, 403);
 
-  // owner photo success; appended after existing media, never cover, no status/verification writes
-  s = setup({ existing: 3 });
+  // owner photo attaches without changing listing or verification state
+  s = setup();
   let r = await attachPropertyMedia(s.deps, 'p1', body());
   assert.equal(r.status, 201);
   assert.equal(s.created.length, 1);
   assert.equal(s.created[0].type, 'IMAGE');
-  assert.equal(s.created[0].order, 3);
   assert.equal(s.created[0].propertyId, 'p1');
   assert.ok(!('isCover' in s.created[0]) && !('status' in s.created[0]) && !('verificationStatus' in s.created[0]));
   assert.equal((await attachPropertyMedia(s.deps, 'p1', body({ mediaScope: 'visual' }))).status, 201);
 
   // assigned agent video success, works with zero media
-  s = setup({ user: { id: 'agent' }, existing: 0, ticketMime: 'video/mp4', ticketResource: 'video' });
+  s = setup({ user: { id: 'agent' }, ticketMime: 'video/mp4', ticketResource: 'video' });
   r = await attachPropertyMedia(s.deps, 'p1', body({ fileName: 'v.mp4', mimeType: 'video/mp4', resourceType: 'video' }));
   assert.equal(r.status, 201);
   assert.equal(s.created[0].type, 'VIDEO');
-  assert.equal(s.created[0].order, 0);
   assert.equal((await attachPropertyMedia(s.deps, 'p1', body({ fileName: 'v.mp4', mimeType: 'video/mp4', resourceType: 'video', mediaScope: 'visual' }))).status, 201);
 
   // documents rejected in the visual flow

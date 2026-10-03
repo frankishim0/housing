@@ -13,6 +13,7 @@ import { CurrencyPrice } from '@/components/currency-price';
 import { convertMeasurement, formatMeasurement } from '@/lib/international';
 import { PropertyMap } from '@/components/property-map';
 import { PropertyMediaManager } from '@/components/property-media-manager';
+import { sortPublicMedia } from '@/lib/property-media-management';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const property = await prisma.property.findFirst({
     where: { OR: [{ slug }, { id: slug }] },
-    select: { title: true, description: true, slug: true, status: true, ownerId: true, agentId: true, media: { where: { type: 'IMAGE' }, orderBy: { isCover: 'desc' }, take: 1, select: { url: true } } },
+    select: { title: true, description: true, slug: true, status: true, ownerId: true, agentId: true, media: { where: { type: 'IMAGE' }, orderBy: [{ isCover: 'desc' }, { order: 'asc' }, { id: 'asc' }], take: 1, select: { url: true } } },
   });
   if (!property) return { title: 'Property not found | Homes Worldwide' };
   if (!isPubliclyVisibleStatus(property.status)) {
@@ -49,6 +50,8 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
   if (!isPubliclyVisibleStatus(propertyRecord.status) && !canViewNonPublicProperty(currentUser, propertyRecord)) {
     notFound();
   }
+  const publicMedia = sortPublicMedia(propertyRecord.media);
+  const managedMedia = [...propertyRecord.media].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
   if (!currentUser || ![propertyRecord.ownerId, propertyRecord.agentId].includes(currentUser.id)) {
     await prisma.property.update({ where: { id: propertyRecord.id }, data: { viewCount: { increment: 1 } } });
   }
@@ -124,17 +127,17 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
               <Image key={`${image}-${index}`} src={image} alt={`${property.title} ${index + 1}`} width={600} height={400} className="h-36 w-full rounded-2xl object-cover" />
             ))}
           </div>
-          {propertyRecord.media.some((item) => item.type === 'VIDEO') && <section className="mt-8">
+          {publicMedia.some((item) => item.type === 'VIDEO') && <section className="mt-8">
             <h2 className="mb-3 text-xl font-semibold text-slate-900">Walkthrough videos</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {propertyRecord.media.filter((item) => item.type === 'VIDEO').map((item) => <video key={item.id} controls preload="metadata" className="aspect-video w-full rounded-2xl bg-slate-950" src={item.url} aria-label={item.fileName ?? `${property.title} walkthrough`} />)}
+              {publicMedia.filter((item) => item.type === 'VIDEO').map((item) => <video key={item.id} controls preload="metadata" className="aspect-video w-full rounded-2xl bg-slate-950" src={item.url} aria-label={item.fileName ?? `${property.title} walkthrough`} />)}
             </div>
           </section>}
           {propertyRecord.location.latitude !== null && propertyRecord.location.longitude !== null && <section className="mt-8">
             <h2 className="mb-3 text-xl font-semibold text-slate-900">Property location</h2>
             <PropertyMap properties={[property]} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} />
           </section>}
-          {currentUser && [propertyRecord.ownerId, propertyRecord.agentId].includes(currentUser.id) && <PropertyMediaManager propertyId={property.id} media={propertyRecord.media.map(({ id, fileName, type, isCover, url }) => ({ id, fileName, type, isCover, ...(type === 'DOCUMENT' ? {} : { url }) }))} />}
+          {currentUser && [propertyRecord.ownerId, propertyRecord.agentId].includes(currentUser.id) && <PropertyMediaManager propertyId={property.id} media={managedMedia.map(({ id, fileName, type, isCover, order, url }) => ({ id, fileName, type, isCover, order, ...(type === 'DOCUMENT' ? {} : { url }) }))} />}
 
           <div className="mt-8 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
