@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEq
 import { FinancialAuditAction, FinancialTransactionStatus, PayoutAccountStatus, PayoutStatus, Prisma } from '@prisma/client';
 import { amountToMinorUnits, getApplicationUrl } from '@/lib/payments';
 import { prisma } from '@/lib/prisma';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 // Seller/agent payout system. This module is completely inert unless PAYOUTS_ENABLED='true'
 // is explicitly set, and every Paystack call it makes still goes through the same sk_test_-only
@@ -858,6 +859,32 @@ export async function processTransferWebhookEvent(event: PaystackTransferWebhook
       await tx.paymentWebhookEvent.updateMany({ where: { eventId }, data: { outcome: outcome.outcome, processedAt: new Date() } });
       return outcome;
     }, { maxWait: 10_000, timeout: 20_000 });
+    if (result.outcome === 'settled') {
+      const identifiers: Prisma.PayoutWhereInput[] = [];
+      if (event.data.transfer_code) identifiers.push({ transferCode: event.data.transfer_code });
+      if (event.data.id !== undefined) identifiers.push({ processorTransferId: String(event.data.id) });
+      if (event.data.reference) identifiers.push({ providerReference: event.data.reference });
+      const payout = identifiers.length
+        ? await prisma.payout.findFirst({
+          where: { OR: identifiers },
+          select: { id: true, recipientId: true, transactionId: true, status: true },
+        }).catch((error) => {
+          console.error('Could not find payout notification recipient:', error);
+          return null;
+        })
+        : null;
+      if (payout) {
+        await notifyUsersSafely({
+          userIds: [payout.recipientId],
+          type: 'PAYMENT',
+          message: payout.status === PayoutStatus.PAID
+            ? 'Your payout transfer was confirmed.'
+            : 'Your payout transfer failed or was reversed. Check the payout dashboard for the latest status.',
+          eventName: 'notification',
+          eventData: { payoutId: payout.id, transactionId: payout.transactionId, status: payout.status },
+        });
+      }
+    }
     return { duplicate: false, outcome: result.outcome };
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

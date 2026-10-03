@@ -2,6 +2,7 @@ import { FinancialAuditAction, FinancialTransactionStatus } from '@prisma/client
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { z } from 'zod';
 
 const schema = z.object({ reason: z.string().trim().min(10).max(2000) });
@@ -68,6 +69,23 @@ export async function POST(request: NextRequest, context: RouteContext<'/api/tra
       });
       return created;
     });
+    const transaction = await prisma.financialTransaction.findUnique({
+      where: { id },
+      select: { buyerId: true, sellerId: true, agentId: true, property: { select: { title: true } } },
+    }).catch((error) => {
+      console.error('Could not find dispute notification recipients:', error);
+      return null;
+    });
+    if (transaction) {
+      await notifyUsersSafely({
+        userIds: [transaction.buyerId, transaction.sellerId, ...(transaction.agentId ? [transaction.agentId] : [])]
+          .filter((recipientId) => recipientId !== user.id),
+        type: 'MODERATION',
+        message: `A dispute was opened for ${transaction.property?.title ?? 'a property transaction'}. Payouts are on hold pending review.`,
+        eventName: 'notification',
+        eventData: { transactionId: id, disputeId: dispute.id },
+      });
+    }
     return NextResponse.json({ data: dispute }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === 'TRANSACTION_NOT_FOUND') {

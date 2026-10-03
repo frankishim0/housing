@@ -3,6 +3,7 @@ import { ModerationAuditAction, UserRole, UserVerificationStatus, VerificationSt
 import { requireRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { logModerationAction } from '@/lib/verification';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -73,17 +74,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         },
       });
     }
-    await tx.notification.create({
-      data: {
-        userId: id,
-        type: 'VERIFICATION',
-        message: status === UserVerificationStatus.VERIFIED
-          ? 'Your identity verification has been approved.'
-          : status === UserVerificationStatus.REJECTED
-            ? `Your identity verification was rejected. Reason: ${parsed.data.reason}`
-            : 'More information is required for your identity verification.',
-      },
-    });
     await logModerationAction({
       client: tx,
       actorId: admin.id,
@@ -95,6 +85,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       reason: parsed.data.reason ?? 'Identity verification reviewed by admin.',
     });
     return updated;
+  });
+  await notifyUsersSafely({
+    userIds: [id],
+    type: 'VERIFICATION',
+    message: status === UserVerificationStatus.VERIFIED
+      ? 'Your identity verification has been approved.'
+      : status === UserVerificationStatus.REJECTED
+        ? 'Your identity verification was rejected. Review the private feedback in your verification dashboard.'
+        : 'More information is required for your identity verification.',
+    eventName: 'notification',
+    eventData: { verificationStatus: user.verificationStatus },
   });
   return NextResponse.json({ data: user });
 }

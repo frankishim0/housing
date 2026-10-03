@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { logModerationAction } from '@/lib/verification';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 const schema = z.object({
   action: z.enum(['resolve', 'dismiss', 'suspend_user']),
@@ -53,13 +54,6 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ad
         reason: parsed.data.adminNotes ?? 'Suspended following report review.',
       });
     }
-    await tx.notification.createMany({
-      data: report.reporterId ? [{
-        userId: report.reporterId,
-        type: 'MODERATION',
-        message: `Your report has been ${parsed.data.action === 'resolve' ? 'resolved' : 'dismissed'}.`,
-      }] : [],
-    });
     await logModerationAction({
       client: tx,
       actorId: actor.id,
@@ -72,5 +66,18 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ad
     });
     return next;
   });
+  if (report.reporterId) {
+    await notifyUsersSafely({
+      userIds: [report.reporterId],
+      type: 'MODERATION',
+      message: parsed.data.action === 'resolve'
+        ? 'Your report has been resolved.'
+        : parsed.data.action === 'dismiss'
+          ? 'Your report has been dismissed.'
+          : 'Your report was reviewed and appropriate action was taken.',
+      eventName: 'notification',
+      eventData: { reportId: report.id },
+    });
+  }
   return NextResponse.json({ data: updated });
 }

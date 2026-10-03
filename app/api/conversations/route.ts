@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { buildConversationPairKey, canStartPropertyConversation, startConversationSchema } from '@/lib/messaging';
 import { checkRateLimit } from '@/lib/rate-limit';
 
@@ -112,12 +113,14 @@ export async function POST(request: NextRequest) {
       data: { conversationId: conversation.id, senderId: user.id, content: parsed.data.content },
       select: { id: true },
     });
-    await Promise.all([
-      prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } }),
-      prisma.notification.create({
-        data: { userId: recipient.id, type: 'MESSAGE', message: `New message from ${user.name} about ${property.title}.` },
-      }),
-    ]);
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+    await notifyUsersSafely({
+      userIds: [recipient.id],
+      type: 'MESSAGE',
+      message: `New message from ${user.name} about ${property.title}.`,
+      eventName: 'notification',
+      eventData: { conversationId: conversation.id, propertyId: property.id },
+    });
     return NextResponse.json({ data: { id: conversation.id, messageId: message.id } }, { status: created ? 201 : 200 });
   }
 

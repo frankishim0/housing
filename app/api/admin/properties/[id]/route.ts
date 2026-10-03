@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { normalizeRejectionReason, adminPropertyReviewSchema } from '@/lib/listing-review';
 import { logModerationAction } from '@/lib/verification';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let admin;
@@ -55,23 +56,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         after: { status: nextStatus, verified: false, verifiedAt: null },
         reason: reason ?? 'Listing rejected by admin review.',
       });
-      const notificationMessages = [
-        { userId: property.ownerId, type: 'PROPERTY' as const, message: `Your property "${property.title}" was rejected. Reason: ${reason ?? 'No specific reason provided.'}` },
-      ];
-      if (property.agentId) notificationMessages.push({ userId: property.agentId, type: 'PROPERTY' as const, message: `The property "${property.title}" was rejected. Reason: ${reason ?? 'No specific reason provided.'}` });
-      await tx.notification.createMany({ data: notificationMessages });
-    } else {
-      await tx.notification.create({
-        data: {
-          userId: property.ownerId,
-          type: 'PROPERTY',
-          message: `Your property "${property.title}" is now ${nextStatus.toLowerCase().replace(/_/g, ' ')}.`,
-        },
-      });
     }
 
     return updatedProperty;
   });
-
+  const recipients = [property.ownerId, ...(property.agentId ? [property.agentId] : [])];
+  if (nextStatus === PropertyStatus.REJECTED) {
+    await notifyUsersSafely({
+      userIds: recipients,
+      type: 'PROPERTY',
+      message: `Your property "${property.title}" was rejected. Review the private feedback in My Listings.`,
+      eventName: 'notification',
+      eventData: { propertyId: property.id },
+    });
+  } else {
+    await notifyUsersSafely({
+      userIds: recipients,
+      type: 'PROPERTY',
+      message: `Your property "${property.title}" is now ${nextStatus.toLowerCase().replace(/_/g, ' ')}.`,
+      eventName: 'notification',
+      eventData: { propertyId: property.id },
+    });
+  }
   return NextResponse.json({ data: updated });
 }

@@ -5,6 +5,7 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { isReportCategory, isReportTargetType } from '@/lib/moderation';
 import { isProfessionalRole, logModerationAction } from '@/lib/verification';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 const schema = z.object({
   targetType: z.string().min(1),
@@ -68,13 +69,6 @@ export async function POST(request: NextRequest) {
         details: parsed.data.details ?? null,
       },
     });
-    await tx.notification.createMany({
-      data: await tx.user.findMany({ where: { role: UserRole.ADMIN }, select: { id: true } }).then((admins) => admins.map((admin) => ({
-        userId: admin.id,
-        type: 'MODERATION',
-        message: `A new ${parsed.data.category.toLowerCase().replace(/_/g, ' ')} report has been submitted.`,
-      }))),
-    });
     await logModerationAction({
       client: tx,
       actorId: user.id,
@@ -85,6 +79,17 @@ export async function POST(request: NextRequest) {
       reason: parsed.data.reason,
     });
     return created;
+  });
+  const admins = await prisma.user.findMany({ where: { role: UserRole.ADMIN }, select: { id: true } }).catch((error) => {
+    console.error('Could not find report notification recipients:', error);
+    return [];
+  });
+  await notifyUsersSafely({
+    userIds: admins.map(({ id }) => id),
+    type: 'MODERATION',
+    message: `A new ${parsed.data.category.toLowerCase().replace(/_/g, ' ')} report has been submitted.`,
+    eventName: 'notification',
+    eventData: { reportId: report.id },
   });
   return NextResponse.json({ data: report }, { status: 201 });
 }

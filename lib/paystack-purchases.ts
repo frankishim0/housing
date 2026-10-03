@@ -14,6 +14,7 @@ import { PaymentPurchase, PaymentWebhookRepository, processVerifiedPayment } fro
 import { createPayoutRecordForPaidTransaction, isPayoutsEnabled } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 import { canCompleteSale } from '@/lib/transaction-lifecycle';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -286,10 +287,77 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
   },
 };
 
+async function processAndNotifyPayment(payment: VerifiedPayment, providerCode: 'PAYSTACK' | 'MOCK') {
+  const result = await processVerifiedPayment(payment, repository, providerCode);
+  if (result.duplicate || !['payment_confirmed', 'payment_failed', 'payment_abandoned'].includes(result.result ?? '')) {
+    return result;
+  }
+
+  try {
+    const purchase = await prisma.payment.findUnique({
+      where: { reference: payment.reference },
+      select: {
+        userId: true,
+        financialTransaction: {
+          select: {
+            id: true,
+            status: true,
+            propertyId: true,
+            sellerId: true,
+            agentId: true,
+            property: { select: { title: true } },
+            payouts: { select: { status: true } },
+          },
+        },
+      },
+    });
+    if (!purchase) return result;
+
+    const transaction = purchase.financialTransaction;
+    const successful = result.result === 'payment_confirmed';
+    const paymentMessage = successful
+      ? transaction?.status === FinancialTransactionStatus.DISPUTED
+        ? 'Payment was received, but this transaction requires review. Please check your transaction details.'
+        : 'Your payment was confirmed.'
+      : result.result === 'payment_abandoned'
+        ? 'Your checkout was cancelled before payment completed.'
+        : 'Your payment failed. No transaction was marked as paid.';
+    const recipients = successful && transaction
+      ? [purchase.userId, transaction.sellerId, ...(transaction.agentId ? [transaction.agentId] : [])]
+      : [purchase.userId];
+    const payoutPending = successful && transaction?.payouts.some((payout) => payout.status === 'PENDING');
+    const propertyTitle = transaction?.property?.title;
+    await notifyUsersSafely({
+      userIds: recipients,
+      type: 'PAYMENT',
+      message: propertyTitle ? `${paymentMessage} Property: ${propertyTitle}.` : paymentMessage,
+      eventName: 'notification',
+      eventData: {
+        ...(transaction ? { transactionId: transaction.id } : {}),
+        ...(transaction?.propertyId ? { propertyId: transaction.propertyId } : {}),
+        status: transaction?.status ?? (successful ? 'PAID' : result.result === 'payment_abandoned' ? 'CANCELLED' : 'FAILED'),
+      },
+    });
+    if (payoutPending && transaction?.sellerId) {
+      await notifyUsersSafely({
+        userIds: [transaction.sellerId],
+        type: 'PAYMENT',
+        message: 'A payout record has been created for this transaction. It remains subject to the holding period and admin approval.',
+        eventName: 'notification',
+        eventData: { transactionId: transaction.id, propertyId: transaction.propertyId, payoutStatus: 'PENDING' },
+      });
+    }
+    return result;
+  } catch (error) {
+    console.error('Payment status notification preparation failed:', error);
+    return result;
+  }
+}
+
 export function processPaystackPayment(payment: VerifiedPayment) {
-  return processVerifiedPayment(payment, repository, 'PAYSTACK');
+  return processAndNotifyPayment(payment, 'PAYSTACK');
 }
 
 export function processMockPayment(payment: VerifiedPayment) {
-  return processVerifiedPayment(payment, repository, 'MOCK');
+  return processAndNotifyPayment(payment, 'MOCK');
 }

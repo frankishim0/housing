@@ -9,7 +9,7 @@ import {
   parseViewingSchedule,
   viewingSlotWindow,
 } from '@/lib/viewings';
-import { publishRealtimeEvent } from '@/lib/realtime';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { z } from 'zod';
 
 const updateSchema = z.discriminatedUnion('action', [
@@ -167,13 +167,14 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/vi
           requester: { select: { id: true, name: true } },
         },
       });
-      await tx.notification.create({ data: { userId: receiverId, type: 'VIEWING', message } });
       return updatedViewing;
     });
-    await publishRealtimeEvent(`user:${receiverId}`, 'notification', {
+    await notifyUsersSafely({
+      userIds: [receiverId],
       type: 'VIEWING',
       message,
-      viewingId: updated.id,
+      eventName: 'notification',
+      eventData: { viewingId: updated.id },
     });
     return NextResponse.json({ data: updated });
   } catch (error) {

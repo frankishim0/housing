@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ACTIVE_VIEWING_STATUSES, parseViewingSchedule, viewingSlotWindow } from '@/lib/viewings';
-import { publishRealtimeEvent } from '@/lib/realtime';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { z } from 'zod';
 
 const requestSchema = z.object({
@@ -80,19 +80,16 @@ export async function POST(request: NextRequest) {
           requester: { select: { id: true, name: true } },
         },
       });
-      await tx.notification.create({
-        data: {
-          userId: recipientId,
-          type: 'VIEWING',
-          message: `New viewing request for ${property.title}.`,
-        },
-      });
       return created;
     });
-    await publishRealtimeEvent(`user:${recipientId}`, 'notification', {
+    await notifyUsersSafely({
+      userIds: [recipientId],
       type: 'VIEWING',
       message: `New viewing request for ${property.title}.`,
-      viewingId: viewing.id,
+      eventName: 'notification',
+      eventData: {
+        viewingId: viewing.id,
+      },
     });
     return NextResponse.json({ data: viewing }, { status: 201 });
   } catch (error) {

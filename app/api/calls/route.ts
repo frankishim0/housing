@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { publishRealtimeEvent } from '@/lib/realtime';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 const createSchema = z.object({
   propertyId: z.string().min(1),
@@ -92,7 +93,21 @@ export async function POST(request: NextRequest) {
 
   if (recipient) {
     const notification = `Incoming property video call from ${user.name} about ${property.title}.`;
-    await prisma.notification.create({ data: { userId: recipient.id, type: 'CALL', message: notification } });
+    await notifyUsersSafely({
+      userIds: [recipient.id],
+      type: 'CALL',
+      message: notification,
+      eventName: 'incoming-call',
+      eventData: {
+        callId: call.id,
+        propertyId,
+        propertyTitle: property.title,
+        propertySlug: property.slug,
+        callerId: user.id,
+        callerName: user.name,
+        type: call.type,
+      },
+    });
     await publishRealtimeEvent(`user:${recipient.id}`, 'incoming-call', {
       callId: call.id,
       propertyId,
@@ -103,14 +118,28 @@ export async function POST(request: NextRequest) {
       type: call.type,
     });
   } else {
-    const [enquiries, favorites] = await Promise.all([
-      prisma.enquiry.findMany({ where: { propertyId }, select: { userId: true }, distinct: ['userId'], take: 500 }),
-      prisma.favorite.findMany({ where: { propertyId }, select: { userId: true }, distinct: ['userId'], take: 500 }),
-    ]);
-    const interestedUserIds = [...new Set([...enquiries, ...favorites].map(({ userId }) => userId).filter((id) => id !== user.id))];
+    let interestedUserIds: string[] = [];
+    try {
+      const [enquiries, favorites] = await Promise.all([
+        prisma.enquiry.findMany({ where: { propertyId }, select: { userId: true }, distinct: ['userId'], take: 500 }),
+        prisma.favorite.findMany({ where: { propertyId }, select: { userId: true }, distinct: ['userId'], take: 500 }),
+      ]);
+      interestedUserIds = [...new Set([...enquiries, ...favorites].map(({ userId }) => userId).filter((id) => id !== user.id))];
+    } catch (error) {
+      console.error('Could not find live-tour notification recipients:', error);
+    }
     if (interestedUserIds.length) {
-      await prisma.notification.createMany({
-        data: interestedUserIds.map((userId) => ({ userId, type: 'LIVE_TOUR', message: `A live tour has started for ${property.title}.` })),
+      await notifyUsersSafely({
+        userIds: interestedUserIds,
+        type: 'LIVE_TOUR',
+        message: `A live tour has started for ${property.title}.`,
+        eventName: 'live-tour',
+        eventData: {
+          callId: call.id,
+          propertyId,
+          propertyTitle: property.title,
+          propertySlug: property.slug,
+        },
       });
       await Promise.all(interestedUserIds.map((userId) => publishRealtimeEvent(`user:${userId}`, 'live-tour', {
         callId: call.id,

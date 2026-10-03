@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canViewVerification, isProfessionalRole, logModerationAction, userVerificationStatusAfterReview, verificationReviewAuditAction } from '@/lib/verification';
+import { notifyUsersSafely } from '@/lib/notifications';
 
 const patchSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('request_more_info'), notes: z.string().trim().min(1).max(4000) }),
@@ -113,18 +114,6 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ve
       });
     }
 
-    await tx.notification.create({
-      data: {
-        userId: verification.userId,
-        type: 'VERIFICATION',
-        message: parsed.data.action === 'approve'
-          ? 'Your verification request has been approved.'
-          : parsed.data.action === 'reject'
-            ? `Your verification request was rejected.${parsed.data.notes ? ` Reason: ${parsed.data.notes}` : ''}`
-            : 'More information is required for your verification request.',
-      },
-    });
-
     await tx.moderationAuditLog.create({
       data: {
         actorId: user.id,
@@ -138,6 +127,20 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ve
     });
 
     return result;
+  });
+
+  await notifyUsersSafely({
+    userIds: [verification.userId],
+    type: 'VERIFICATION',
+    message: parsed.data.action === 'approve'
+      ? 'Your verification request has been approved.'
+      : parsed.data.action === 'reject'
+        ? 'Your verification request was rejected. Review the private feedback in your verification dashboard.'
+        : parsed.data.action === 'suspend'
+          ? 'Your verification status was suspended. Review your verification dashboard.'
+          : 'More information is required for your verification request.',
+    eventName: 'notification',
+    eventData: { verificationId: verification.id, status: updated.status },
   });
 
   return NextResponse.json({

@@ -3,6 +3,7 @@ import { Prisma, UserRole, UserVerificationStatus, VerificationStatus } from '@p
 import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { classifyUpload, getCloudinaryUploadDetails, verifyCloudinaryUpload, verifyUploadTicket } from '@/lib/cloudinary';
 import { canSubmitPropertyVerification, isProfessionalRole, isVerificationType, logModerationAction, verificationSubmissionAuditAction } from '@/lib/verification';
 
@@ -156,13 +157,6 @@ export async function POST(request: NextRequest) {
           },
         });
       }
-      await tx.notification.createMany({
-        data: await tx.user.findMany({ where: { role: UserRole.ADMIN }, select: { id: true } }).then((admins) => admins.map((admin) => ({
-          userId: admin.id,
-          type: 'VERIFICATION',
-          message: `${user.name} submitted a ${parsed.data.type.toLowerCase().replace(/_/g, ' ')} verification request.`,
-        }))),
-      });
       await logModerationAction({
         client: tx,
         actorId: user.id,
@@ -173,6 +167,17 @@ export async function POST(request: NextRequest) {
         reason: parsed.data.notes ?? 'Verification request submitted',
       });
       return created;
+    });
+    const admins = await prisma.user.findMany({ where: { role: UserRole.ADMIN }, select: { id: true } }).catch((error) => {
+      console.error('Could not find verification notification recipients:', error);
+      return [];
+    });
+    await notifyUsersSafely({
+      userIds: admins.map(({ id }) => id),
+      type: 'VERIFICATION',
+      message: `A ${parsed.data.type.toLowerCase().replace(/_/g, ' ')} verification request was submitted.`,
+      eventName: 'notification',
+      eventData: { verificationId: verification.id, propertyId: parsed.data.propertyId ?? null },
     });
     return NextResponse.json({ data: verification }, { status: 201 });
   } catch (error) {

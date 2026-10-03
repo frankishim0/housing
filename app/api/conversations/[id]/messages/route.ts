@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { classifyUpload, verifyCloudinaryUpload, verifyUploadTicket } from '@/lib/cloudinary';
 import { publishRealtimeEvent } from '@/lib/realtime';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { sendMessageSchema } from '@/lib/messaging';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { z } from 'zod';
@@ -70,24 +71,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
     await transaction.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
-    if (recipients.length) {
-      await transaction.notification.createMany({
-        data: recipients.map((recipient) => ({
-          userId: recipient.userId,
-          type: 'MESSAGE' as const,
-          message: `New message from ${user.name}.`,
-        })),
-      });
-    }
     await transaction.user.update({ where: { id: user.id }, data: { lastSeenAt: new Date() } });
     return created;
   });
   const realtimeDelivered = await publishRealtimeEvent(`conversation:${conversationId}`, 'message', message);
-  await Promise.all(recipients.map((recipient) => publishRealtimeEvent(`user:${recipient.userId}`, 'notification', {
+  await notifyUsersSafely({
+    userIds: recipients.map(({ userId }) => userId),
     type: 'MESSAGE',
     message: `New message from ${user.name}.`,
-    conversationId,
-  })));
+    eventName: 'notification',
+    eventData: { conversationId },
+  });
   return NextResponse.json({ data: message, realtimeDelivered }, { status: 201 });
 }
 

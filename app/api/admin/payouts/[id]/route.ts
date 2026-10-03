@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { UserRole } from '@prisma/client';
 import { requireRole } from '@/lib/auth';
 import { approvePayout, arePayoutTransfersEnabled, initiatePayoutTransfer, isPayoutsEnabled, reconcilePayout, retryFailedPayout, setPayoutHold } from '@/lib/payouts';
+import { notifyUsersSafely } from '@/lib/notifications';
+import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
 function authError(error: unknown) {
@@ -37,15 +39,58 @@ export async function POST(request: Request, context: RouteContext<'/api/admin/p
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
-    if (parsed.data.action === 'approve') return NextResponse.json({ data: await approvePayout(id, admin.id, parsed.data.reason) });
+    let result!:
+      | Awaited<ReturnType<typeof approvePayout>>
+      | Awaited<ReturnType<typeof initiatePayoutTransfer>>
+      | Awaited<ReturnType<typeof retryFailedPayout>>
+      | Awaited<ReturnType<typeof reconcilePayout>>
+      | Awaited<ReturnType<typeof setPayoutHold>>;
+    let notificationMessage: string | null = null;
+    if (parsed.data.action === 'approve') {
+      result = await approvePayout(id, admin.id, parsed.data.reason);
+      if (result.outcome === 'approved') notificationMessage = 'Your payout has been approved. Transfer execution remains subject to the current payout controls.';
+    }
     if (parsed.data.action === 'initiate' && !arePayoutTransfersEnabled()) {
       return NextResponse.json({ error: 'Payout transfers are disabled; approvals can be recorded but no money will be moved.' }, { status: 503 });
     }
-    if (parsed.data.action === 'initiate') return NextResponse.json({ data: await initiatePayoutTransfer(id) });
-    if (parsed.data.action === 'retry') return NextResponse.json({ data: await retryFailedPayout(id, admin.id) });
-    if (parsed.data.action === 'reconcile') return NextResponse.json({ data: await reconcilePayout(id) });
-    if (parsed.data.action === 'hold') return NextResponse.json({ data: await setPayoutHold(id, true, parsed.data.reason, admin.id) });
-    return NextResponse.json({ data: await setPayoutHold(id, false, parsed.data.reason, admin.id) });
+    if (parsed.data.action === 'initiate') {
+      result = await initiatePayoutTransfer(id);
+      if (result.outcome === 'initiated' || result.outcome === 'unknown' || result.outcome === 'failed') {
+        notificationMessage = 'Your payout status has been updated. Check the payout dashboard for the latest details.';
+      }
+    }
+    if (parsed.data.action === 'retry') {
+      result = await retryFailedPayout(id, admin.id);
+      if (result.outcome === 'reset') notificationMessage = 'Your payout is eligible for another reviewed transfer attempt.';
+    }
+    if (parsed.data.action === 'reconcile') {
+      result = await reconcilePayout(id);
+      if (result.outcome === 'reconciled') notificationMessage = 'Your payout status was reconciled. Check the payout dashboard for the latest details.';
+    }
+    if (parsed.data.action === 'hold') {
+      result = await setPayoutHold(id, true, parsed.data.reason, admin.id);
+      if (result.outcome === 'updated') notificationMessage = 'Your payout has been placed on hold pending review.';
+    }
+    if (parsed.data.action === 'release') {
+      result = await setPayoutHold(id, false, parsed.data.reason, admin.id);
+      if (result.outcome === 'updated') notificationMessage = 'Your payout hold has been released and the payout is pending review.';
+    }
+    if (notificationMessage) {
+      const payout = await prisma.payout.findUnique({ where: { id }, select: { recipientId: true, transactionId: true } }).catch((error) => {
+        console.error('Could not find payout notification recipient:', error);
+        return null;
+      });
+      if (payout) {
+        await notifyUsersSafely({
+          userIds: [payout.recipientId],
+          type: 'PAYMENT',
+          message: notificationMessage,
+          eventName: 'notification',
+          eventData: { payoutId: id, transactionId: payout.transactionId },
+        });
+      }
+    }
+    return NextResponse.json({ data: result });
   } catch (error) {
     console.error('Admin payout action failed:', error instanceof Error ? error.message : 'Unknown error');
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Payout action failed.' }, { status: 502 });

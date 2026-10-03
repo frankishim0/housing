@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { z } from 'zod';
 
 const enquirySchema = z.object({
@@ -33,12 +34,12 @@ export async function POST(request: NextRequest) {
   });
 
   const recipientId = property.agentId ?? property.ownerId;
-  await prisma.notification.create({
-    data: {
-      userId: recipientId,
-      type: 'ENQUIRY',
-      message: `New enquiry received for ${property.title}.`,
-    },
+  await notifyUsersSafely({
+    userIds: [recipientId],
+    type: 'ENQUIRY',
+    message: `New enquiry received for ${property.title}.`,
+    eventName: 'notification',
+    eventData: { enquiryId: enquiry.id, propertyId: property.id },
   });
 
   return NextResponse.json({ data: enquiry }, { status: 201 });

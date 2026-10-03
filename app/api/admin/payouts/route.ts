@@ -3,6 +3,7 @@ import { PayoutStatus, UserRole } from '@prisma/client';
 import { requireRole } from '@/lib/auth';
 import { arePayoutTransfersEnabled, createEligiblePayouts, isPayoutsEnabled } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
+import { notifyUsersSafely } from '@/lib/notifications';
 import { z } from 'zod';
 
 function authError(error: unknown) {
@@ -76,6 +77,29 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const created = await createEligiblePayouts();
+  if (!created.disabled) {
+    const payoutIds = created.results.flatMap((result) => (
+      (result.outcome === 'created' || result.outcome === 'held_unsupported_currency') && result.payoutId
+        ? [result.payoutId]
+        : []
+    ));
+    const payouts = await prisma.payout.findMany({
+      where: { id: { in: payoutIds } },
+      select: { id: true, recipientId: true, transactionId: true, status: true },
+    }).catch((error) => {
+      console.error('Could not load newly created payout notification recipients:', error);
+      return [];
+    });
+    await Promise.all(payouts.map((payout) => notifyUsersSafely({
+      userIds: [payout.recipientId],
+      type: 'PAYMENT',
+      message: payout.status === 'HELD'
+        ? 'A payout record was created for your settled transaction but is on hold. Check the payout dashboard for details.'
+        : 'A payout record has been created for your settled transaction. It remains subject to review and transfer controls.',
+      eventName: 'notification',
+      eventData: { payoutId: payout.id, transactionId: payout.transactionId, status: payout.status },
+    })));
+  }
   return NextResponse.json({
     data: {
       eligibilityScan: created,
