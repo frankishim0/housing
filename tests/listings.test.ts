@@ -16,6 +16,8 @@ for (const status of Object.values(PropertyStatus)) {
 
 // 2. Owner cannot set arbitrary statuses outside the explicit allow-list.
 assert.equal(isOwnerStatusTransitionAllowed(PropertyStatus.DRAFT, PropertyStatus.SUSPENDED), false);
+assert.equal(isOwnerStatusTransitionAllowed(PropertyStatus.DRAFT, PropertyStatus.REJECTED), false);
+assert.equal(isOwnerStatusTransitionAllowed(PropertyStatus.PENDING_REVIEW, PropertyStatus.REJECTED), false);
 assert.equal(isOwnerStatusTransitionAllowed(PropertyStatus.DRAFT, PropertyStatus.SOLD), false);
 assert.equal(isOwnerStatusTransitionAllowed(PropertyStatus.SUSPENDED, PropertyStatus.PENDING_REVIEW), false);
 // ...but the intended lifecycle moves remain available.

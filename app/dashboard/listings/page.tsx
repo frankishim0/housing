@@ -98,6 +98,12 @@ export default async function MyListingsPage({ searchParams }: { searchParams: P
                   <p className="mt-1 text-sm text-slate-600">{location}</p>
                   <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(listing.price, listing.currencyCode)} <span className="text-sm font-normal text-slate-500">{listing.currencyCode}</span></p>
                   <p className="mt-1 text-sm text-slate-500">{listing.listingType.replace(/_/g, ' ').toLowerCase()} · {listing.type} · Updated {new Intl.DateTimeFormat(user.preferredLanguage, { dateStyle: 'medium', timeZone: user.timeZone ?? undefined }).format(new Date(listing.updatedAt))}</p>
+                  {listing.status === 'REJECTED' && listing.rejectionReason && (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                      <p className="font-semibold">Rejected</p>
+                      <p className="mt-1">{listing.rejectionReason}</p>
+                    </div>
+                  )}
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <Link href={`/listings/${listing.id}/edit`} className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-emerald-700 hover:text-emerald-800">Edit</Link>
                     <Link href={`/properties/${listing.slug}`} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">View listing</Link>

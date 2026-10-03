@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const parsedQuery = querySchema.safeParse(Object.fromEntries(request.nextUrl.searchParams.entries()));
   if (!parsedQuery.success) return NextResponse.json({ error: parsedQuery.error.flatten() }, { status: 400 });
   const query = parsedQuery.data;
-  const [verifications, reports, users] = await prisma.$transaction([
+  const [verifications, reports, users, pendingProperties] = await prisma.$transaction([
     prisma.verification.findMany({
       where: {
         ...(query.status ? { status: query.status as VerificationStatus } : {}),
@@ -43,6 +43,20 @@ export async function GET(request: NextRequest) {
       orderBy: { updatedAt: 'desc' },
       take: 200,
     }),
+    prisma.property.findMany({
+      where: { status: 'PENDING_REVIEW' },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        status: true,
+        updatedAt: true,
+        owner: { select: { id: true, name: true, email: true } },
+        agent: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: 200,
+    }),
   ]);
   return NextResponse.json({
     data: {
@@ -54,6 +68,7 @@ export async function GET(request: NextRequest) {
       })),
       reports,
       users,
+      pendingProperties,
     },
   });
 }

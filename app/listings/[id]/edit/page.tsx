@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { UserRole } from '@prisma/client';
+import { ModerationAuditAction, UserRole } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ListingActions } from '@/components/listing-actions';
@@ -27,6 +27,15 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
   if (!property) notFound();
   const isAdmin = user.role === UserRole.ADMIN;
   if (!canEditListing(user, property)) notFound();
+  const latestRejection = property.status === 'REJECTED' ? await prisma.moderationAuditLog.findFirst({
+    where: {
+      entityType: 'Property',
+      entityId: property.id,
+      action: ModerationAuditAction.PROPERTY_REVIEW_REJECTED,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { reason: true, createdAt: true },
+  }) : null;
 
   const initial: ListingFormInitial = {
     id: property.id,
@@ -73,6 +82,13 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
         <p className="mt-4 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-600">Listing management</p>
         <h1 className="mt-2 text-4xl font-bold text-slate-900">Edit listing</h1>
         <p className="mt-2 text-sm text-slate-600">Current status: <span className="font-semibold">{property.status.replace(/_/g, ' ').toLowerCase()}</span>. Saving details does not change its status or publish it.</p>
+        {property.status === 'REJECTED' && latestRejection?.reason && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            <p className="font-semibold">Rejected</p>
+            <p className="mt-1">{latestRejection.reason}</p>
+            {latestRejection.createdAt && <p className="mt-1 text-xs">Reviewed {new Intl.DateTimeFormat(user.preferredLanguage, { dateStyle: 'medium', timeStyle: 'short', timeZone: user.timeZone ?? undefined }).format(latestRejection.createdAt)}</p>}
+          </div>
+        )}
       </div>
       <ListingForm initial={initial} />
       {(property.ownerId === user.id || property.agentId === user.id) && (

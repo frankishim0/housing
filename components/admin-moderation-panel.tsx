@@ -27,9 +27,20 @@ type Report = {
   targetUser: { id: string; name: string; email: string; role: string } | null;
 };
 
+type PendingProperty = {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  updatedAt: string;
+  owner: { id: string; name: string | null; email: string };
+  agent: { id: string; name: string | null; email: string } | null;
+};
+
 export function AdminModerationPanel() {
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [pendingProperties, setPendingProperties] = useState<PendingProperty[]>([]);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
 
@@ -39,6 +50,7 @@ export function AdminModerationPanel() {
     if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Unable to load moderation data.');
     setVerifications(result.data.verifications);
     setReports(result.data.reports);
+    setPendingProperties(result.data.pendingProperties ?? []);
   }
 
   useEffect(() => {
@@ -84,8 +96,48 @@ export function AdminModerationPanel() {
     }
   }
 
+  async function reviewListing(id: string, action: 'approve' | 'reject') {
+    setBusyId(id);
+    try {
+      const reason = action === 'reject' ? (prompt('Provide a rejection reason') ?? '').trim() : '';
+      if (action === 'reject' && !reason) {
+        throw new Error('A rejection reason is required.');
+      }
+      const response = await fetch(`/api/admin/properties/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action === 'reject' ? { status: 'REJECTED', reason } : { status: 'PUBLISHED' }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Unable to review listing.');
+      await reload();
+    } catch (listingError) {
+      setError(listingError instanceof Error ? listingError.message : 'Unable to review listing.');
+    } finally {
+      setBusyId('');
+    }
+  }
+
   return (
     <section className="mt-8 grid gap-6">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-2xl font-bold text-slate-900">Pending listings</h2>
+        <div className="mt-4 space-y-3">
+          {pendingProperties.length === 0 ? <p className="text-sm text-slate-500">No listings awaiting review.</p> : pendingProperties.map((item) => (
+            <article key={item.id} className="rounded-2xl border border-slate-100 p-4">
+              <p className="font-semibold text-slate-900">{item.title}</p>
+              <p className="mt-1 text-sm text-slate-600">Owner: {item.owner.name ?? item.owner.email}</p>
+              {item.agent && <p className="mt-1 text-sm text-slate-600">Assigned agent: {item.agent.name ?? item.agent.email}</p>}
+              <p className="mt-1 text-sm text-slate-500">Submitted {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.updatedAt))}</p>
+              <a href={`/properties/${item.slug}`} className="mt-2 inline-block text-sm font-semibold text-emerald-800 underline">Open listing</a>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button disabled={busyId === item.id} onClick={() => void reviewListing(item.id, 'approve')} className="rounded-full bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Approve & publish</button>
+                <button disabled={busyId === item.id} onClick={() => void reviewListing(item.id, 'reject')} className="rounded-full bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Reject</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-2xl font-bold text-slate-900">Pending verifications</h2>
         <div className="mt-4 space-y-3">

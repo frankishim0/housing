@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PropertyStatus, UserRole } from '@prisma/client';
+import { ModerationAuditAction, PropertyStatus, UserRole } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { isOwnerStatusTransitionAllowed } from '@/lib/property-lifecycle';
+import { logModerationAction } from '@/lib/verification';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
@@ -22,10 +23,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   let nextStatus: PropertyStatus;
   if (body.published) {
     if (isAdmin) {
-      // Admins may publish directly; this is the moderation approval itself.
       nextStatus = PropertyStatus.PUBLISHED;
     } else if (isOwnerStatusTransitionAllowed(property.status, PropertyStatus.PENDING_REVIEW)) {
-      // Owners/agents cannot go live directly; publishing requires moderation review.
       nextStatus = PropertyStatus.PENDING_REVIEW;
     } else {
       return NextResponse.json({ error: 'This listing cannot be submitted for review from its current status.' }, { status: 403 });
@@ -37,12 +36,41 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     nextStatus = PropertyStatus.PAUSED;
   }
 
-  const updated = await prisma.property.update({
-    where: { id: property.id },
-    data: {
-      status: nextStatus,
-      publishedAt: nextStatus === PropertyStatus.PUBLISHED ? new Date() : null,
-    },
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextProperty = await tx.property.update({
+      where: { id: property.id },
+      data: {
+        status: nextStatus,
+        publishedAt: nextStatus === PropertyStatus.PUBLISHED ? new Date() : null,
+      },
+    });
+    if (!isAdmin && nextStatus === PropertyStatus.PENDING_REVIEW) {
+      await logModerationAction({
+        client: tx,
+        actorId: user.id,
+        action: ModerationAuditAction.PROPERTY_REVIEW_SUBMITTED,
+        entityType: 'Property',
+        entityId: property.id,
+        before: { status: property.status },
+        after: { status: nextStatus },
+        reason: 'Owner or agent submitted listing for review.',
+      });
+      await tx.notification.create({
+        data: {
+          userId: user.id,
+          type: 'PROPERTY',
+          message: 'Your listing has been submitted for review.',
+        },
+      });
+      await tx.notification.createMany({
+        data: await tx.user.findMany({ where: { role: UserRole.ADMIN }, select: { id: true } }).then((admins) => admins.map((admin) => ({
+          userId: admin.id,
+          type: 'MODERATION',
+          message: `${user.name} submitted "${property.title}" for listing review.`,
+        }))),
+      });
+    }
+    return nextProperty;
   });
   return NextResponse.json({ data: updated });
 }
