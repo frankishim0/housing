@@ -7,6 +7,7 @@ import { notifySavedPropertyUsers } from '@/lib/notifications';
 import { propertyUpdateSchema } from '@/lib/validation';
 import { canViewNonPublicProperty, isOwnerStatusTransitionAllowed, isPubliclyVisibleStatus, shouldInvalidateVerification } from '@/lib/property-lifecycle';
 import { canEditListing } from '@/lib/listing-edit';
+import { excludePrivateDocumentUrls } from '@/lib/property-media-security';
 
 function serialized<T extends { price: Prisma.Decimal | unknown; size: Prisma.Decimal | unknown }>(property: T) {
   return { ...property, price: Number(property.price), size: Number(property.size) };
@@ -17,7 +18,7 @@ async function findProperty(id: string) {
     where: { OR: [{ id }, { slug: id }] },
     include: {
       location: true,
-      media: { orderBy: { order: 'asc' } },
+      media: { where: { type: { not: 'DOCUMENT' } }, orderBy: { order: 'asc' } },
       amenities: true,
       owner: { select: { id: true, name: true, profileImage: true, role: true, verificationStatus: true } },
       agent: { select: { id: true, name: true, profileImage: true, role: true, verificationStatus: true } },
@@ -40,7 +41,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     latitude: property.location.latitude === null ? null : Math.round(property.location.latitude * 100) / 100,
     longitude: property.location.longitude === null ? null : Math.round(property.location.longitude * 100) / 100,
   } : property.location;
-  return NextResponse.json({ data: serialized({ ...property, location }) });
+  return NextResponse.json({ data: excludePrivateDocumentUrls(serialized({ ...property, location })) });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

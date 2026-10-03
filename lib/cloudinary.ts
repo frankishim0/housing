@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 
 export type UploadPurpose =
-  | { kind: 'property'; propertyId: string }
+  | { kind: 'property'; propertyId: string; mediaScope: 'creation' | 'visual' }
   | { kind: 'message'; conversationId: string }
   | { kind: 'verification'; verificationType: string; propertyId?: string };
 
@@ -155,4 +155,14 @@ export function classifyUpload(mimeType: string) {
     return { resourceType: 'raw' as const, mediaType: 'DOCUMENT' as const, maxBytes: 25 * 1024 * 1024 };
   }
   return null;
+}
+
+export function getCloudinaryDeliveryType(url: string): 'upload' | 'authenticated' | null {
+  try {
+    const segments = new URL(url).pathname.split('/');
+    const deliveryType = segments[3];
+    return deliveryType === 'upload' || deliveryType === 'authenticated' ? deliveryType : null;
+  } catch {
+    return null;
+  }
 }

@@ -5,6 +5,7 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ListingActions } from '@/components/listing-actions';
 import { ListingForm, type ListingFormInitial } from '@/components/listing-form';
+import { PropertyMediaManager } from '@/components/property-media-manager';
 import { getListingActions, LISTING_MANAGER_ROLES } from '@/lib/owner-listings';
 import { canEditListing } from '@/lib/listing-edit';
 
@@ -55,7 +56,13 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
     hasPool: property.hasPool,
     hasSecurity: property.hasSecurity,
     luxury: property.luxury,
-    media: property.media,
+    media: property.media.map(({ id, url, type, fileName, isCover }) => ({
+      id,
+      url: type === 'DOCUMENT' ? '' : url,
+      type,
+      fileName,
+      isCover,
+    })),
   };
   const actions = isAdmin ? [] : getListingActions(property.status);
 
@@ -68,6 +75,13 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
         <p className="mt-2 text-sm text-slate-600">Current status: <span className="font-semibold">{property.status.replace(/_/g, ' ').toLowerCase()}</span>. Saving details does not change its status or publish it.</p>
       </div>
       <ListingForm initial={initial} />
+      {(property.ownerId === user.id || property.agentId === user.id) && (
+        <PropertyMediaManager
+          propertyId={property.id}
+          canUpload
+          media={property.media.map(({ id, url, type, fileName, isCover }) => ({ id, type, fileName, isCover, url: type === 'DOCUMENT' ? undefined : url }))}
+        />
+      )}
       {!isAdmin && actions.length > 0 && (
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold text-slate-900">Listing status actions</h2>

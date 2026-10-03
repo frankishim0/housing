@@ -7,6 +7,7 @@ import { getCurrencyName, isCurrencyCode } from '@/lib/international';
 import { getCountryCurrency } from '@/lib/international';
 import { getLocationIdsWithinRadius, upsertLocationHierarchy, toSlug } from '@/lib/location';
 import { getCode } from 'country-list';
+import { excludePrivateDocumentUrls } from '@/lib/property-media-security';
 
 function serializeProperty<T extends { price: Prisma.Decimal | unknown; size: Prisma.Decimal | unknown }>(property: T) {
   return { ...property, price: Number(property.price), size: Number(property.size) };
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         location: true,
-        media: { orderBy: { order: 'asc' } },
+        media: { where: { type: { not: 'DOCUMENT' } }, orderBy: { order: 'asc' } },
         amenities: true,
         owner: { select: { id: true, name: true, profileImage: true, role: true, verificationStatus: true } },
         agent: { select: { id: true, name: true, profileImage: true, role: true, verificationStatus: true } },
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
     data: properties.map((property) => {
       const safeProperty = serializeProperty(property);
       return {
-        ...safeProperty,
+        ...excludePrivateDocumentUrls(safeProperty),
         favorite: favoriteIds.has(property.id),
         location: property.location.hideExactAddress ? {
           ...property.location,

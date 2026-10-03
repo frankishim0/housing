@@ -131,7 +131,7 @@ export function ListingForm({ initial }: { initial?: ListingFormInitial }) {
           const signResponse = await fetch('/api/uploads/sign', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ purpose: { kind: 'property', propertyId }, fileName: file.name, mimeType: file.type, size: file.size }),
+            body: JSON.stringify({ purpose: { kind: 'property', propertyId, mediaScope: 'creation' }, fileName: file.name, mimeType: file.type, size: file.size }),
           });
           const signResult = await signResponse.json();
           if (!signResponse.ok) throw new Error(typeof signResult.error === 'string' ? signResult.error : 'Could not authorize listing media upload.');
@@ -143,6 +143,7 @@ export function ListingForm({ initial }: { initial?: ListingFormInitial }) {
           uploadForm.set('folder', signed.folder);
           uploadForm.set('public_id', signed.publicId);
           uploadForm.set('overwrite', 'false');
+          if (signed.deliveryType === 'authenticated') uploadForm.set('type', signed.deliveryType);
           uploadForm.set('signature', signed.signature);
           const uploadResponse = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(signed.cloudName)}/${signed.resourceType}/upload`, { method: 'POST', body: uploadForm });
           const uploadResult = await uploadResponse.json();
@@ -150,7 +151,7 @@ export function ListingForm({ initial }: { initial?: ListingFormInitial }) {
           const saveResponse = await fetch(`/api/properties/${propertyId}/media`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticket: signed.ticket, fileName: file.name, mimeType: file.type, size: file.size, secureUrl: uploadResult.secure_url, publicId: uploadResult.public_id, resourceType: signed.resourceType }),
+            body: JSON.stringify({ ticket: signed.ticket, fileName: file.name, mimeType: file.type, size: file.size, secureUrl: uploadResult.secure_url, publicId: uploadResult.public_id, resourceType: signed.resourceType, mediaScope: 'creation' }),
           });
           const saveResult = await saveResponse.json();
           if (!saveResponse.ok) throw new Error(typeof saveResult.error === 'string' ? saveResult.error : 'Could not attach uploaded media to the listing.');
@@ -211,12 +212,12 @@ export function ListingForm({ initial }: { initial?: ListingFormInitial }) {
       </section>
 
       <section className="grid gap-5 md:grid-cols-4">
-        <div className="text-sm font-medium text-slate-700"><span className="mb-2 block">Original listing currency</span>{editing ? <p className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">{initial?.currencyCode} · fixed for this listing</p> : <CurrencySelect name="currencyCode" value={currencyCode} onChange={setCurrencyCode} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" />}<span className="mt-1 block text-xs text-slate-500">Saved as the property&apos;s original currency; converted prices are display-only.</span></div>
+        <div className="text-sm font-medium text-slate-700"><span className="mb-2 block">Original listing currency</span>{editing ? <p className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">{initial?.currencyCode} Â· fixed for this listing</p> : <CurrencySelect name="currencyCode" value={currencyCode} onChange={setCurrencyCode} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" />}<span className="mt-1 block text-xs text-slate-500">Saved as the property&apos;s original currency; converted prices are display-only.</span></div>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Price</span><input name="price" type="number" min="0" step="any" required defaultValue={initial?.price} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Bedrooms</span><input name="bedrooms" type="number" min="0" required defaultValue={initial?.bedrooms} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Bathrooms</span><input name="bathrooms" type="number" min="0" required defaultValue={initial?.bathrooms} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Property size</span><input name="size" type="number" min="1" step="any" required defaultValue={initial?.size} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
-        <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Size unit</span><select name="sizeUnit" defaultValue={initial?.sizeUnit ?? 'SQUARE_METERS'} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><option value="SQUARE_METERS">Square meters (m²)</option><option value="SQUARE_FEET">Square feet (ft²)</option><option value="ACRES">Acres</option><option value="HECTARES">Hectares</option></select></label>
+        <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Size unit</span><select name="sizeUnit" defaultValue={initial?.sizeUnit ?? 'SQUARE_METERS'} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><option value="SQUARE_METERS">Square meters (mÂ²)</option><option value="SQUARE_FEET">Square feet (ftÂ²)</option><option value="ACRES">Acres</option><option value="HECTARES">Hectares</option></select></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Year built</span><input name="yearBuilt" type="number" min="1000" max={new Date().getFullYear()} defaultValue={initial?.yearBuilt ?? ''} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Parking spaces</span><input name="parkingSpaces" type="number" min="0" defaultValue={initial?.parkingSpaces ?? ''} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Furnishing</span><select name="furnished" defaultValue={initial?.furnished === null || initial?.furnished === undefined ? '' : String(initial.furnished)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><option value="">Not specified</option><option value="true">Furnished</option><option value="false">Unfurnished</option></select></label>
@@ -226,12 +227,7 @@ export function ListingForm({ initial }: { initial?: ListingFormInitial }) {
         <label className="block text-sm font-medium text-slate-700 md:col-span-4"><span className="mb-2 block">Amenities (comma separated)</span><input name="amenities" defaultValue={initial?.amenities.join(', ')} placeholder="Security, Generator, Parking" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
       </section>
 
-      {editing ? (
-        <section className="space-y-3">
-          <h2 className="font-semibold text-slate-900">Existing media</h2>
-          {initial?.media.length ? <ul className="grid gap-3 sm:grid-cols-2">{initial.media.map((media) => <li key={media.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"><span className="min-w-0 flex-1 truncate text-sm text-slate-700">{media.fileName ?? media.type}{media.isCover ? ' · Cover image' : ''}</span><a href={media.url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-emerald-800 underline">Preview</a></li>)}</ul> : <p className="text-sm text-slate-500">No media attached yet. Media management is not available in this edit phase.</p>}
-        </section>
-      ) : (
+      {editing ? null : (
         <section className="space-y-2">
           <label className="block text-sm font-medium text-slate-700" htmlFor="listing-media">Listing photos, walkthrough videos, or property documents</label>
           <input id="listing-media" name="media" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif,video/mp4,video/webm,video/quicktime,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" />
@@ -241,7 +237,7 @@ export function ListingForm({ initial }: { initial?: ListingFormInitial }) {
 
       {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       {success && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{success}</p>}
-      <div className="flex flex-wrap justify-end gap-3"><button disabled={pending} type="submit" className="rounded-full bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-60">{pending ? 'Saving…' : editing ? 'Save changes' : 'Create listing'}</button></div>
+      <div className="flex flex-wrap justify-end gap-3"><button disabled={pending} type="submit" className="rounded-full bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-60">{pending ? 'Savingâ€¦' : editing ? 'Save changes' : 'Create listing'}</button></div>
     </form>
   );
 }

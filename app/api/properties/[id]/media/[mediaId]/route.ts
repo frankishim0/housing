@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
-import { getCloudinaryConfig, signCloudinaryParams } from '@/lib/cloudinary';
+import { getCloudinaryConfig, getCloudinaryDeliveryType, signCloudinaryParams } from '@/lib/cloudinary';
 import { prisma } from '@/lib/prisma';
 
 async function authorize(propertyId: string, userId: string) {
@@ -34,11 +34,15 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     try {
       const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
       const timestamp = Math.floor(Date.now() / 1000).toString();
-      const signature = signCloudinaryParams({ public_id: media.publicId, timestamp }, apiSecret);
+      const deliveryType = getCloudinaryDeliveryType(media.url);
+      if (!deliveryType) return NextResponse.json({ error: 'Cloud storage delivery type is invalid.' }, { status: 502 });
+      const signatureParams = { public_id: media.publicId, timestamp, ...(deliveryType === 'authenticated' ? { type: deliveryType } : {}) };
+      const signature = signCloudinaryParams(signatureParams, apiSecret);
       const body = new FormData();
       body.set('public_id', media.publicId);
       body.set('timestamp', timestamp);
       body.set('api_key', apiKey);
+      if (deliveryType === 'authenticated') body.set('type', deliveryType);
       body.set('signature', signature);
       const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${encodeURIComponent(media.resourceType)}/destroy`, { method: 'POST', body });
       const result = await response.json() as { result?: string };

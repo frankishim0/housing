@@ -5,10 +5,12 @@ import { getSessionUser } from '@/lib/auth';
 import { classifyUpload, createUploadTicket, getCloudinaryConfig, signCloudinaryParams } from '@/lib/cloudinary';
 import { prisma } from '@/lib/prisma';
 import { canSubmitPropertyVerification } from '@/lib/verification';
+import { propertyMediaDeliveryType } from '@/lib/property-media-security';
+import { isAllowedForMediaScope } from '@/lib/property-media-upload';
 
 const schema = z.object({
   purpose: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('property'), propertyId: z.string().min(1) }),
+    z.object({ kind: z.literal('property'), propertyId: z.string().min(1), mediaScope: z.enum(['creation', 'visual']) }),
     z.object({ kind: z.literal('message'), conversationId: z.string().min(1) }),
     z.object({ kind: z.literal('verification'), verificationType: z.string().min(1), propertyId: z.string().min(1).optional() }),
   ]),
@@ -24,7 +26,8 @@ export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const file = classifyUpload(parsed.data.mimeType);
-  if (!file || (parsed.data.purpose.kind === 'verification' && file.resourceType === 'video') || parsed.data.size > file.maxBytes) {
+  if (!file || (parsed.data.purpose.kind === 'verification' && file.resourceType === 'video') || parsed.data.size > file.maxBytes
+    || (parsed.data.purpose.kind === 'property' && !isAllowedForMediaScope(parsed.data.purpose.mediaScope, 'property', file.mediaType))) {
     return NextResponse.json({ error: 'Unsupported file type or file exceeds the upload size limit.' }, { status: 400 });
   }
 
@@ -63,7 +66,11 @@ export async function POST(request: NextRequest) {
         ? `housing/messages/${parsed.data.purpose.conversationId}/${user.id}`
         : `housing/verifications/${user.id}/${parsed.data.purpose.verificationType}${parsed.data.purpose.propertyId ? `/${parsed.data.purpose.propertyId}` : ''}`;
     const folderName = folder;
-    const deliveryType: 'upload' | 'authenticated' = parsed.data.purpose.kind === 'verification' ? 'authenticated' : 'upload';
+    const deliveryType = parsed.data.purpose.kind === 'verification'
+      ? 'authenticated'
+      : parsed.data.purpose.kind === 'property'
+        ? propertyMediaDeliveryType(file.mediaType)
+        : 'upload';
     const publicId = `${folderName}/${crypto.randomUUID()}`;
     const signedParams = {
       folder: folderName,

@@ -130,17 +130,11 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
               {propertyRecord.media.filter((item) => item.type === 'VIDEO').map((item) => <video key={item.id} controls preload="metadata" className="aspect-video w-full rounded-2xl bg-slate-950" src={item.url} aria-label={item.fileName ?? `${property.title} walkthrough`} />)}
             </div>
           </section>}
-          {propertyRecord.media.some((item) => item.type === 'DOCUMENT') && <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-            <h2 className="font-semibold text-slate-900">Property documents</h2>
-            <ul className="mt-3 space-y-2">
-              {propertyRecord.media.filter((item) => item.type === 'DOCUMENT').map((item) => <li key={item.id}><a href={item.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-emerald-800 underline">{item.fileName ?? 'Open property document'}</a></li>)}
-            </ul>
-          </section>}
           {propertyRecord.location.latitude !== null && propertyRecord.location.longitude !== null && <section className="mt-8">
             <h2 className="mb-3 text-xl font-semibold text-slate-900">Property location</h2>
             <PropertyMap properties={[property]} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} />
           </section>}
-          {currentUser && [propertyRecord.ownerId, propertyRecord.agentId].includes(currentUser.id) && <PropertyMediaManager propertyId={property.id} media={propertyRecord.media} />}
+          {currentUser && [propertyRecord.ownerId, propertyRecord.agentId].includes(currentUser.id) && <PropertyMediaManager propertyId={property.id} media={propertyRecord.media.map(({ id, fileName, type, isCover, url }) => ({ id, fileName, type, isCover, ...(type === 'DOCUMENT' ? {} : { url }) }))} />}
 
           <div className="mt-8 rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
