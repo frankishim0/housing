@@ -4,6 +4,8 @@ import {
   FinancialTransactionStatus,
   MonetizationOrderStatus,
   PaymentStatus,
+  PaymentType,
+  PropertyStatus,
   Prisma,
   SubscriptionStatus,
 } from '@prisma/client';
@@ -11,6 +13,7 @@ import { amountToMinorUnits, VerifiedPayment } from '@/lib/payments';
 import { PaymentPurchase, PaymentWebhookRepository, processVerifiedPayment } from '@/lib/payment-webhook';
 import { createPayoutRecordForPaidTransaction, isPayoutsEnabled } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
+import { canCompleteSale } from '@/lib/transaction-lifecycle';
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -126,8 +129,37 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
     const providerCode = paymentRecord.provider;
 
     if (purchase.kind === 'TRANSACTION') {
+      const financialTransaction = await tx.financialTransaction.findUnique({
+        where: { id: purchase.id },
+        select: { propertyId: true, transactionType: true },
+      });
+      let saleConflict = false;
+      if (successful && financialTransaction?.transactionType === PaymentType.SALE && financialTransaction.propertyId) {
+        await tx.$queryRaw`SELECT "id" FROM "Property" WHERE "id" = ${financialTransaction.propertyId} FOR UPDATE`;
+        const property = await tx.property.findUnique({
+          where: { id: financialTransaction.propertyId },
+          select: { status: true },
+        });
+        const anotherSaleIsPaid = await tx.financialTransaction.count({
+          where: {
+            propertyId: financialTransaction.propertyId,
+            id: { not: purchase.id },
+            transactionType: PaymentType.SALE,
+            status: FinancialTransactionStatus.PAID,
+          },
+        }).then((count) => count > 0);
+        saleConflict = !canCompleteSale(property?.status ?? null, anotherSaleIsPaid);
+        if (!saleConflict) {
+          const propertyUpdate = await tx.property.updateMany({
+            where: { id: financialTransaction.propertyId, status: PropertyStatus.PUBLISHED },
+            data: { status: PropertyStatus.SOLD, publishedAt: null },
+          });
+          saleConflict = propertyUpdate.count !== 1;
+        }
+      }
+
       const status = successful
-        ? FinancialTransactionStatus.PAID
+        ? saleConflict ? FinancialTransactionStatus.DISPUTED : FinancialTransactionStatus.PAID
         : abandoned
           ? FinancialTransactionStatus.CANCELLED
           : FinancialTransactionStatus.FAILED;
@@ -139,8 +171,18 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
           ...(successful ? { paidAt: payment.paidAt ?? new Date() } : {}),
         },
       });
-      if (updated.count !== 1) return;
-      if (successful && providerCode === 'PAYSTACK' && isPayoutsEnabled()) {
+      if (updated.count !== 1) throw new Error('Financial transaction state changed during payment settlement.');
+      if (saleConflict) {
+        await tx.transactionDispute.upsert({
+          where: { transactionId: purchase.id },
+          create: {
+            transactionId: purchase.id,
+            reason: 'Payment succeeded after the sale listing became unavailable; administrator review is required.',
+          },
+          update: {},
+        });
+      }
+      if (successful && !saleConflict && providerCode === 'PAYSTACK' && isPayoutsEnabled()) {
         await createPayoutRecordForPaidTransaction(tx, purchase.id, payment.paidAt ?? new Date());
       }
       await tx.payment.update({
@@ -165,7 +207,9 @@ const repository: PaymentWebhookRepository<TransactionClient> = {
             providerReference: payment.reference,
             providerTransactionId: payment.transactionId,
           },
-          reason: `${providerCode} test-mode payment verification processed (${payment.status}).`,
+          reason: saleConflict
+            ? `${providerCode} payment succeeded but the sale could not be completed because the listing was no longer available; the transaction was placed in dispute.`
+            : `${providerCode} test-mode payment verification processed (${payment.status}).`,
         },
       });
       return;

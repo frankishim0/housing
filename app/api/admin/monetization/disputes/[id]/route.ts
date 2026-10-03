@@ -1,7 +1,8 @@
-import { FinancialAuditAction, FinancialTransactionStatus, UserRole } from '@prisma/client';
+import { FinancialAuditAction, FinancialTransactionStatus, PaymentType, PropertyStatus, UserRole } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { canTransitionDispute } from '@/lib/transaction-lifecycle';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -26,6 +27,9 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ad
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const before = await tx.transactionDispute.findUniqueOrThrow({ where: { id } });
+      if (!canTransitionDispute(before.status, parsed.data.status)) {
+        throw new Error('INVALID_DISPUTE_TRANSITION');
+      }
       const completed = parsed.data.status === 'RESOLVED' || parsed.data.status === 'REJECTED';
       const dispute = await tx.transactionDispute.update({
         where: { id },
@@ -36,10 +40,31 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ad
           where: { transactionId: before.transactionId, id: { not: id }, status: { in: ['OPEN', 'UNDER_REVIEW'] } },
         });
         if (outstanding === 0) {
-          await tx.financialTransaction.updateMany({
-            where: { id: before.transactionId, status: FinancialTransactionStatus.DISPUTED },
-            data: { status: FinancialTransactionStatus.PAID },
+          const transaction = await tx.financialTransaction.findUnique({
+            where: { id: before.transactionId },
+            select: { id: true, propertyId: true, transactionType: true },
           });
+          let mayReturnToPaid = true;
+          if (transaction?.transactionType === PaymentType.SALE && transaction.propertyId) {
+            const [property, anotherPaidSale] = await Promise.all([
+              tx.property.findUnique({ where: { id: transaction.propertyId }, select: { status: true } }),
+              tx.financialTransaction.count({
+                where: {
+                  propertyId: transaction.propertyId,
+                  id: { not: transaction.id },
+                  transactionType: PaymentType.SALE,
+                  status: FinancialTransactionStatus.PAID,
+                },
+              }),
+            ]);
+            mayReturnToPaid = property?.status === PropertyStatus.SOLD && anotherPaidSale === 0;
+          }
+          if (mayReturnToPaid) {
+            await tx.financialTransaction.updateMany({
+              where: { id: before.transactionId, status: FinancialTransactionStatus.DISPUTED },
+              data: { status: FinancialTransactionStatus.PAID },
+            });
+          }
         }
       }
       await tx.financialAuditLog.create({
@@ -59,6 +84,9 @@ export async function PATCH(request: NextRequest, context: RouteContext<'/api/ad
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'P2025') {
       return NextResponse.json({ error: 'Dispute not found.' }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === 'INVALID_DISPUTE_TRANSITION') {
+      return NextResponse.json({ error: 'This dispute cannot transition from its current status.' }, { status: 409 });
     }
     throw error;
   }

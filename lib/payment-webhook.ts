@@ -40,7 +40,12 @@ export async function processVerifiedPayment<Tx>(
     }
 
     if (purchase.status === 'PAID' || purchase.status === 'ACTIVE') return 'purchase_already_paid';
-    if (purchase.status === 'FAILED' || purchase.status === 'CANCELLED' || purchase.status === 'EXPIRED') {
+    if (purchase.status === 'FAILED'
+      || purchase.status === 'CANCELLED'
+      || purchase.status === 'EXPIRED'
+      || purchase.status === 'DISPUTED'
+      || purchase.status === 'PARTIALLY_REFUNDED'
+      || purchase.status === 'REFUNDED') {
       return 'purchase_already_final';
     }
 

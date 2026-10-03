@@ -128,6 +128,14 @@ async function main() {
   }
 
   {
+    const disputedPurchase = { ...basePurchase, status: 'DISPUTED' };
+    const { repository, tx } = createRepository(disputedPurchase);
+    const result = await processVerifiedPayment(verifiedPayment({ transactionId: 'late-sale-callback' }), repository);
+    assert.equal(result.result, 'purchase_already_final');
+    assert.equal(tx.updates, 0);
+  }
+
+  {
     const { repository, tx } = createRepository(basePurchase);
     await assert.rejects(
       processVerifiedPayment(verifiedPayment({ amountMinor: basePurchase.amountMinor + 1 }), repository),
