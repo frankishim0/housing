@@ -157,6 +157,7 @@ export default async function DashboardPage() {
           <h2 className="text-2xl font-bold text-slate-900">Quick actions</h2>
           <p className="mt-2 text-sm text-slate-500">{occupiedProperties} occupied and {availableProperties} available properties.</p>
           <div className="mt-5 space-y-3">
+            {isProfessional && <Link href="/dashboard/listings" className="block rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">My Listings</Link>}
             <Link href="/messages" className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">Messages <MessageSquareText size={16} /></Link>
             <Link href="/dashboard/profile" className="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100">Global profile settings</Link>
             <Link href="/dashboard/viewings" className="block rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100">Property viewings</Link>
