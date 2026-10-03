@@ -51,13 +51,14 @@ export function buildOwnerListingOrderBy(sort: OwnerListingQuery['sort']): Prism
   }
 }
 
-export type ListingActionId = 'submit' | 'resubmit' | 'pause' | 'rented' | 'sold';
+export type ListingActionId = 'submit' | 'resubmit' | 'return_to_draft' | 'pause' | 'rented' | 'sold';
 
 /** Derives the available actions from the existing lifecycle rules; no new transitions are defined here. */
 export function getListingActions(status: PropertyStatus): ListingActionId[] {
   const actions: ListingActionId[] = [];
   const can = (next: PropertyStatus) => isOwnerStatusTransitionAllowed(status, next);
   if (can(PropertyStatus.PENDING_REVIEW)) actions.push(status === PropertyStatus.DRAFT ? 'submit' : 'resubmit');
+  if (can(PropertyStatus.DRAFT)) actions.push('return_to_draft');
   if (can(PropertyStatus.PAUSED)) actions.push('pause');
   if (can(PropertyStatus.RENTED)) actions.push('rented');
   if (can(PropertyStatus.SOLD)) actions.push('sold');

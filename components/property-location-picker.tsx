@@ -20,12 +20,18 @@ const LocationPinMap = dynamic(() => import('@/components/location-pin-map').the
   loading: () => <div className="h-56 animate-pulse rounded-lg bg-slate-100" />,
 });
 
-export function PropertyLocationPicker({ onSelect }: { onSelect: (result: Result) => void }) {
+export function PropertyLocationPicker({
+  onSelect,
+  initialCoordinates,
+}: {
+  onSelect: (result: Result) => void;
+  initialCoordinates?: { latitude: number; longitude: number };
+}) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Result[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [pin, setPin] = useState<{ latitude: number; longitude: number } | null>(initialCoordinates ?? null);
 
   function updatePin(coordinates: { latitude: number; longitude: number }) {
     setPin(coordinates);

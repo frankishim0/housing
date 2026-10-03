@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:monetization",
-    "test:monetization": "tsx tests/monetization.test.ts && tsx tests/paystack.test.ts && tsx tests/paystack-synthetic.test.ts && tsx tests/mock-payments.test.ts && tsx tests/payouts.test.ts && tsx tests/viewings.test.ts && tsx tests/messaging.test.ts && tsx tests/listings.test.ts && tsx tests/owner-listings.test.ts",
+    "test:monetization": "tsx tests/monetization.test.ts && tsx tests/paystack.test.ts && tsx tests/paystack-synthetic.test.ts && tsx tests/mock-payments.test.ts && tsx tests/payouts.test.ts && tsx tests/viewings.test.ts && tsx tests/messaging.test.ts && tsx tests/listings.test.ts && tsx tests/owner-listings.test.ts && tsx tests/listing-edit.test.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts"

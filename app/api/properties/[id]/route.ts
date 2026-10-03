@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma, PropertyStatus, UserRole } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getCurrencyName } from '@/lib/international';
-import { toSlug } from '@/lib/location';
+import { toSlug, upsertLocationHierarchy } from '@/lib/location';
 import { notifySavedPropertyUsers } from '@/lib/notifications';
 import { propertyUpdateSchema } from '@/lib/validation';
 import { canViewNonPublicProperty, isOwnerStatusTransitionAllowed, isPubliclyVisibleStatus, shouldInvalidateVerification } from '@/lib/property-lifecycle';
+import { canEditListing } from '@/lib/listing-edit';
 
 function serialized<T extends { price: Prisma.Decimal | unknown; size: Prisma.Decimal | unknown }>(property: T) {
   return { ...property, price: Number(property.price), size: Number(property.size) };
@@ -52,7 +52,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const property = await findProperty((await params).id);
   if (!property) return NextResponse.json({ error: 'Property not found.' }, { status: 404 });
   const isAdmin = user.role === UserRole.ADMIN;
-  if (!isAdmin && property.ownerId !== user.id && property.agentId !== user.id) {
+  if (!canEditListing(user, property)) {
     return NextResponse.json({ error: 'You do not own this property.' }, { status: 403 });
   }
 
@@ -74,11 +74,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   for (const field of ['title', 'description', 'bedrooms', 'bathrooms', 'size', 'parkingSpaces', 'yearBuilt', 'listingType', 'sizeUnit', 'furnished', 'hasPool', 'hasSecurity', 'luxury', 'price'] as const) {
     if (fields[field] !== undefined) data[field] = fields[field] as never;
   }
-  if (fields.currencyCode !== undefined) {
-    const currencyCode = fields.currencyCode;
-    await prisma.currency.upsert({ where: { code: currencyCode }, create: { code: currencyCode, name: getCurrencyName(currencyCode) }, update: {} });
-    data.currency = { connect: { code: currencyCode } };
-  }
   if (fields.type !== undefined) {
     const name = fields.type;
     const code = toSlug(name);
@@ -90,16 +85,48 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     data.type = name;
     data.propertyType = { connect: { id: propertyType.id } };
   }
+  if (fields.amenities !== undefined) {
+    data.amenities = {
+      deleteMany: {},
+      create: fields.amenities.map((name) => ({ name })),
+    };
+  }
   if (requestedStatus !== undefined) {
     data.status = requestedStatus;
     data.publishedAt = requestedStatus === PropertyStatus.PUBLISHED ? new Date() : null;
   }
-  if (shouldInvalidateVerification(Object.keys(fields), property.verified)) {
+  if (shouldInvalidateVerification([
+    ...Object.keys(fields),
+    ...(fields.location ? ['location'] : []),
+    ...(fields.amenities ? ['amenities'] : []),
+  ], property.verified)) {
     data.verified = false;
     data.verifiedAt = null;
   }
 
-  const updated = await prisma.property.update({ where: { id: property.id }, data, include: { location: true, media: true, amenities: true } });
+  const updated = await prisma.$transaction(async (transaction) => {
+    if (fields.location !== undefined) {
+      const location = fields.location;
+      const locationData = await upsertLocationHierarchy(transaction, {
+        countryCode: location.countryCode,
+        region: location.region,
+        city: location.city,
+        neighborhood: location.neighborhood,
+        postalCode: location.postalCode,
+        address: location.address,
+        latitude: location.latitude ?? undefined,
+        longitude: location.longitude ?? undefined,
+        hideExactAddress: location.hideExactAddress ?? false,
+      });
+      const locationRecord = await transaction.location.create({ data: locationData, select: { id: true } });
+      data.location = { connect: { id: locationRecord.id } };
+    }
+    return transaction.property.update({
+      where: { id: property.id },
+      data,
+      include: { location: true, media: true, amenities: true },
+    });
+  });
   await notifySavedPropertyUsers(property.id, `A property you saved has updated details or availability: ${updated.title}.`, user.id);
   return NextResponse.json({ data: serialized(updated) });
 }

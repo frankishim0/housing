@@ -63,6 +63,8 @@ export const MATERIAL_VERIFICATION_FIELDS = [
   'bathrooms',
   'size',
   'sizeUnit',
+  'location',
+  'amenities',
 ] as const;
 
 export function shouldInvalidateVerification(changedFields: readonly string[], wasVerified: boolean) {

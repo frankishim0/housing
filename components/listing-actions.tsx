@@ -7,6 +7,7 @@ import type { ListingActionId } from '@/lib/owner-listings';
 const ACTIONS: Record<ListingActionId, { label: string; confirm: string; request: (id: string) => { url: string; body: unknown } }> = {
   submit: { label: 'Submit for review', confirm: 'Submit this listing for review?', request: (id) => ({ url: `/api/properties/${id}/publish`, body: { published: true } }) },
   resubmit: { label: 'Resubmit for review', confirm: 'Resubmit this listing for review? It will leave public view until approved.', request: (id) => ({ url: `/api/properties/${id}/publish`, body: { published: true } }) },
+  return_to_draft: { label: 'Return to draft', confirm: 'Return this rejected listing to draft? It will remain private until resubmitted and approved.', request: (id) => ({ url: `/api/properties/${id}`, body: { status: 'DRAFT' } }) },
   pause: { label: 'Pause', confirm: 'Pause this listing? It will no longer be publicly visible.', request: (id) => ({ url: `/api/properties/${id}/publish`, body: { published: false } }) },
   rented: { label: 'Mark rented', confirm: 'Mark this listing as rented?', request: (id) => ({ url: `/api/properties/${id}`, body: { status: 'RENTED' } }) },
   sold: { label: 'Mark sold', confirm: 'Mark this listing as sold?', request: (id) => ({ url: `/api/properties/${id}`, body: { status: 'SOLD' } }) },

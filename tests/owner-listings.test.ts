@@ -61,8 +61,8 @@ assert.deepEqual(getListingActions(PropertyStatus.PUBLISHED), ['pause', 'rented'
 assert.deepEqual(getListingActions(PropertyStatus.PAUSED), ['resubmit']);
 assert.deepEqual(getListingActions(PropertyStatus.RENTED), ['resubmit']);
 assert.deepEqual(getListingActions(PropertyStatus.SOLD), ['resubmit']);
-assert.deepEqual(getListingActions(PropertyStatus.PENDING_REVIEW), []);
-assert.deepEqual(getListingActions(PropertyStatus.REJECTED), []);
+assert.deepEqual(getListingActions(PropertyStatus.PENDING_REVIEW), ['return_to_draft']);
+assert.deepEqual(getListingActions(PropertyStatus.REJECTED), ['return_to_draft']);
 assert.deepEqual(getListingActions(PropertyStatus.SUSPENDED), []);
 
 console.log('Owner listing inventory tests passed.');

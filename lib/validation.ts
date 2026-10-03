@@ -128,6 +128,17 @@ export const propertyUpdateSchema = z.object({
   hasPool: z.boolean().optional(),
   hasSecurity: z.boolean().optional(),
   luxury: z.boolean().optional(),
-  currencyCode: currencyCodeSchema.optional(),
   status: z.enum(['DRAFT', 'PENDING_REVIEW', 'REJECTED', 'PUBLISHED', 'PAUSED', 'RENTED', 'SOLD', 'SUSPENDED']).optional(),
+  amenities: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
+  location: z.object({
+    countryCode: countryCodeSchema,
+    region: z.string().trim().min(1).max(120),
+    city: z.string().trim().min(1).max(120),
+    neighborhood: z.string().trim().max(120),
+    postalCode: z.string().trim().max(30).optional(),
+    address: z.string().trim().min(1).max(300),
+    latitude: z.number().min(-90).max(90).nullable().optional(),
+    longitude: z.number().min(-180).max(180).nullable().optional(),
+    hideExactAddress: z.boolean(),
+  }).strict().optional(),
 }).strict();
