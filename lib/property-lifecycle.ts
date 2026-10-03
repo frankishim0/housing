@@ -32,14 +32,15 @@ export function canViewNonPublicProperty(
  * by this map.
  */
 const OWNER_STATUS_TRANSITIONS: Partial<Record<PropertyStatus, PropertyStatus[]>> = {
-  [PropertyStatus.DRAFT]: [PropertyStatus.PENDING_REVIEW],
+  [PropertyStatus.DRAFT]: [PropertyStatus.PENDING_REVIEW, PropertyStatus.ARCHIVED],
   [PropertyStatus.PENDING_REVIEW]: [PropertyStatus.DRAFT],
-  [PropertyStatus.REJECTED]: [PropertyStatus.DRAFT],
+  [PropertyStatus.REJECTED]: [PropertyStatus.DRAFT, PropertyStatus.ARCHIVED],
   [PropertyStatus.PUBLISHED]: [PropertyStatus.PAUSED, PropertyStatus.RENTED, PropertyStatus.SOLD],
-  [PropertyStatus.PAUSED]: [PropertyStatus.PENDING_REVIEW],
-  [PropertyStatus.RENTED]: [PropertyStatus.PENDING_REVIEW],
-  [PropertyStatus.SOLD]: [PropertyStatus.PENDING_REVIEW],
+  [PropertyStatus.PAUSED]: [PropertyStatus.PENDING_REVIEW, PropertyStatus.ARCHIVED],
+  [PropertyStatus.RENTED]: [PropertyStatus.PENDING_REVIEW, PropertyStatus.ARCHIVED],
+  [PropertyStatus.SOLD]: [PropertyStatus.PENDING_REVIEW, PropertyStatus.ARCHIVED],
   [PropertyStatus.SUSPENDED]: [],
+  [PropertyStatus.ARCHIVED]: [PropertyStatus.DRAFT],
 };
 
 export function isOwnerStatusTransitionAllowed(current: PropertyStatus, next: PropertyStatus) {

@@ -4,7 +4,10 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { ListingActionId } from '@/lib/owner-listings';
 
-const ACTIONS: Record<ListingActionId, { label: string; confirm: string; request: (id: string) => { url: string; body: unknown } }> = {
+const ACTIONS: Record<ListingActionId, { label: string; confirm: string; method?: 'PATCH' | 'DELETE'; request: (id: string) => { url: string; body?: unknown } }> = {
+  archive: { label: 'Archive', confirm: 'Archive this listing? It will be hidden from the public but kept in My Listings, and you can restore it later.', request: (id) => ({ url: `/api/properties/${id}/archive`, body: { archived: true } }) },
+  restore: { label: 'Restore to draft', confirm: 'Restore this listing to draft? It stays private until resubmitted and approved.', request: (id) => ({ url: `/api/properties/${id}/archive`, body: { archived: false } }) },
+  delete: { label: 'Delete permanently', confirm: 'Permanently delete this draft? This cannot be undone.', method: 'DELETE', request: (id) => ({ url: `/api/properties/${id}` }) },
   submit: { label: 'Submit for review', confirm: 'Submit this listing for review?', request: (id) => ({ url: `/api/properties/${id}/publish`, body: { published: true } }) },
   resubmit: { label: 'Resubmit for review', confirm: 'Resubmit this listing for review? It will leave public view until approved.', request: (id) => ({ url: `/api/properties/${id}/publish`, body: { published: true } }) },
   return_to_draft: { label: 'Return to draft', confirm: 'Return this rejected listing to draft? It will remain private until resubmitted and approved.', request: (id) => ({ url: `/api/properties/${id}`, body: { status: 'DRAFT' } }) },
@@ -25,9 +28,10 @@ export function ListingActions({ propertyId, actions }: { propertyId: string; ac
     setError('');
     try {
       const { url, body } = config.request(propertyId);
-      const response = await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const response = await fetch(url, { method: config.method ?? 'PATCH', ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'This action could not be completed.');
+      if (action === 'delete') router.push('/dashboard/listings');
       router.refresh();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'This action could not be completed.');

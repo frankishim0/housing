@@ -8,6 +8,8 @@ import { propertyUpdateSchema } from '@/lib/validation';
 import { canViewNonPublicProperty, isOwnerStatusTransitionAllowed, isPubliclyVisibleStatus, shouldInvalidateVerification } from '@/lib/property-lifecycle';
 import { canEditListing } from '@/lib/listing-edit';
 import { excludePrivateDocumentUrls } from '@/lib/property-media-security';
+import { getDeletionBlockers } from '@/lib/listing-archive';
+import { destroyCloudinaryAsset } from '@/lib/cloudinary';
 
 function serialized<T extends { price: Prisma.Decimal | unknown; size: Prisma.Decimal | unknown }>(property: T) {
   return { ...property, price: Number(property.price), size: Number(property.size) };
@@ -135,11 +137,51 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-  const property = await findProperty((await params).id);
-  if (!property) return NextResponse.json({ error: 'Property not found.' }, { status: 404 });
-  if (user.role !== UserRole.ADMIN && property.ownerId !== user.id && property.agentId !== user.id) {
-    return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
-  }
-  await prisma.property.delete({ where: { id: property.id } });
+  const lookup = (await params).id;
+
+  const result = await prisma.$transaction(async (tx) => {
+    const found = await tx.property.findFirst({ where: { OR: [{ id: lookup }, { slug: lookup }] }, select: { id: true } });
+    if (!found) return { error: 'Property not found.', status: 404 as const };
+    await tx.$queryRaw`SELECT "id" FROM "Property" WHERE "id" = ${found.id} FOR UPDATE`;
+    const property = await tx.property.findUnique({
+      where: { id: found.id },
+      select: {
+        id: true, ownerId: true, agentId: true, status: true,
+        media: { select: { url: true, publicId: true, resourceType: true } },
+      },
+    });
+    if (!property) return { error: 'Property not found.', status: 404 as const };
+    if (user.role !== UserRole.ADMIN && property.ownerId !== user.id && property.agentId !== user.id) {
+      return { error: 'Forbidden.', status: 403 as const };
+    }
+
+    const [payments, transactions, viewings, conversations, enquiries, callSessions, featuredListings, tenants, verifications, reports, reviews, auditLogs, financialAudits] = await Promise.all([
+      tx.payment.count({ where: { propertyId: property.id } }),
+      tx.financialTransaction.count({ where: { propertyId: property.id } }),
+      tx.viewing.count({ where: { propertyId: property.id } }),
+      tx.conversation.count({ where: { propertyId: property.id } }),
+      tx.enquiry.count({ where: { propertyId: property.id } }),
+      tx.callSession.count({ where: { propertyId: property.id } }),
+      tx.featuredListing.count({ where: { propertyId: property.id } }),
+      tx.tenant.count({ where: { propertyId: property.id } }),
+      tx.verification.count({ where: { propertyId: property.id } }),
+      tx.report.count({ where: { propertyId: property.id } }),
+      tx.review.count({ where: { propertyId: property.id } }),
+      tx.moderationAuditLog.count({ where: { entityType: 'Property', entityId: property.id } }),
+      tx.financialAuditLog.count({ where: { entityType: 'Property', entityId: property.id } }),
+    ]);
+    const blockers = getDeletionBlockers(property.status, {
+      payments, transactions, viewings, conversations, enquiries, callSessions, featuredListings, tenants, verifications, reports, reviews,
+      auditLogs: auditLogs + financialAudits,
+    });
+    if (blockers.length > 0) return { error: blockers.join(' '), status: 409 as const };
+
+    await tx.property.delete({ where: { id: property.id } });
+    return { media: property.media, status: 200 as const };
+  });
+
+  if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
+  // The records are already gone; a failed asset cleanup only leaves an orphan, never a broken listing.
+  await Promise.all(result.media.map((media) => destroyCloudinaryAsset(media)));
   return NextResponse.json({ success: true });
 }

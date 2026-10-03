@@ -157,6 +157,29 @@ export function classifyUpload(mimeType: string) {
   return null;
 }
 
+export async function destroyCloudinaryAsset(media: { url: string; publicId: string | null; resourceType: string | null }) {
+  if (!media.publicId || !media.resourceType) return true;
+  try {
+    const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
+    const deliveryType = getCloudinaryDeliveryType(media.url);
+    if (!deliveryType) return false;
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const signature = signCloudinaryParams({ public_id: media.publicId, timestamp, ...(deliveryType === 'authenticated' ? { type: deliveryType } : {}) }, apiSecret);
+    const body = new FormData();
+    body.set('public_id', media.publicId);
+    body.set('timestamp', timestamp);
+    body.set('api_key', apiKey);
+    if (deliveryType === 'authenticated') body.set('type', deliveryType);
+    body.set('signature', signature);
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${encodeURIComponent(media.resourceType)}/destroy`, { method: 'POST', body });
+    const result = await response.json() as { result?: string };
+    return response.ok && ['ok', 'not found'].includes(result.result ?? '');
+  } catch (error) {
+    console.error('Cloudinary asset cleanup failed:', error);
+    return false;
+  }
+}
+
 export function getCloudinaryDeliveryType(url: string): 'upload' | 'authenticated' | null {
   try {
     const segments = new URL(url).pathname.split('/');

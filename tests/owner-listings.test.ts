@@ -37,7 +37,7 @@ for (const status of Object.values(PropertyStatus)) {
 }
 assert.equal(parse({ status: 'ALL' }).status, undefined);
 assert.equal(parse({ status: '' }).status, undefined);
-assert.equal(ownerListingQuerySchema.safeParse({ status: 'ARCHIVED' }).success, false);
+assert.equal(ownerListingQuerySchema.safeParse({ status: 'DELETED' }).success, false);
 
 // Search: matches title or location, and stays inside the ownership scope
 const searched = buildOwnerListingWhere('user-1', parse({ q: '  Lagos ' }));
@@ -56,13 +56,14 @@ assert.deepEqual(buildOwnerListingOrderBy('price_desc')[0], { price: 'desc' });
 assert.equal(ownerListingQuerySchema.safeParse({ sort: 'views' }).success, false);
 
 // Actions mirror the existing lifecycle rules only
-assert.deepEqual(getListingActions(PropertyStatus.DRAFT), ['submit']);
+assert.deepEqual(getListingActions(PropertyStatus.DRAFT), ['submit', 'archive', 'delete']);
 assert.deepEqual(getListingActions(PropertyStatus.PUBLISHED), ['pause', 'rented', 'sold']);
-assert.deepEqual(getListingActions(PropertyStatus.PAUSED), ['resubmit']);
-assert.deepEqual(getListingActions(PropertyStatus.RENTED), ['resubmit']);
-assert.deepEqual(getListingActions(PropertyStatus.SOLD), ['resubmit']);
+assert.deepEqual(getListingActions(PropertyStatus.PAUSED), ['resubmit', 'archive']);
+assert.deepEqual(getListingActions(PropertyStatus.RENTED), ['resubmit', 'archive']);
+assert.deepEqual(getListingActions(PropertyStatus.SOLD), ['resubmit', 'archive']);
 assert.deepEqual(getListingActions(PropertyStatus.PENDING_REVIEW), ['return_to_draft']);
-assert.deepEqual(getListingActions(PropertyStatus.REJECTED), ['return_to_draft']);
+assert.deepEqual(getListingActions(PropertyStatus.REJECTED), ['return_to_draft', 'archive']);
 assert.deepEqual(getListingActions(PropertyStatus.SUSPENDED), []);
+assert.deepEqual(getListingActions(PropertyStatus.ARCHIVED), ['restore']);
 
 console.log('Owner listing inventory tests passed.');

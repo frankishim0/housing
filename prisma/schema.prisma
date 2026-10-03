@@ -43,6 +43,7 @@ enum PropertyStatus {
   RENTED
   SOLD
   SUSPENDED
+  ARCHIVED
 }
 
 enum MediaType {

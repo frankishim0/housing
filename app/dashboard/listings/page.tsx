@@ -12,14 +12,14 @@ import { ListingActions } from '@/components/listing-actions';
 export const dynamic = 'force-dynamic';
 
 const STATUS_LABELS: Record<PropertyStatus, string> = {
-  DRAFT: 'Draft', PENDING_REVIEW: 'Pending Review', PUBLISHED: 'Published', PAUSED: 'Paused', RENTED: 'Rented', SOLD: 'Sold', REJECTED: 'Rejected', SUSPENDED: 'Suspended',
+  DRAFT: 'Draft', PENDING_REVIEW: 'Pending Review', PUBLISHED: 'Published', PAUSED: 'Paused', RENTED: 'Rented',   SOLD: 'Sold', REJECTED: 'Rejected', SUSPENDED: 'Suspended', ARCHIVED: 'Archived',
 };
 const STATUS_TONES: Record<PropertyStatus, string> = {
   DRAFT: 'bg-slate-100 text-slate-700', PENDING_REVIEW: 'bg-amber-100 text-amber-800', PUBLISHED: 'bg-emerald-100 text-emerald-800', PAUSED: 'bg-sky-100 text-sky-800',
-  RENTED: 'bg-violet-100 text-violet-800', SOLD: 'bg-violet-100 text-violet-800', REJECTED: 'bg-red-100 text-red-800', SUSPENDED: 'bg-red-100 text-red-800',
+  RENTED: 'bg-violet-100 text-violet-800', SOLD: 'bg-violet-100 text-violet-800', REJECTED: 'bg-red-100 text-red-800', SUSPENDED: 'bg-red-100 text-red-800', ARCHIVED: 'bg-slate-200 text-slate-600',
 };
 const SORT_LABELS: Record<(typeof LISTING_SORTS)[number], string> = { updated: 'Recently updated', created: 'Recently created', price_asc: 'Price: low to high', price_desc: 'Price: high to low' };
-const FILTER_ORDER: PropertyStatus[] = ['DRAFT', 'PENDING_REVIEW', 'PUBLISHED', 'PAUSED', 'RENTED', 'SOLD', 'REJECTED', 'SUSPENDED'];
+const FILTER_ORDER: PropertyStatus[] = ['DRAFT', 'PENDING_REVIEW', 'PUBLISHED', 'PAUSED', 'RENTED', 'SOLD', 'REJECTED', 'SUSPENDED', 'ARCHIVED'];
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
