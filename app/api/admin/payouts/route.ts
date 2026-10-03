@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PayoutStatus, UserRole } from '@prisma/client';
 import { requireRole } from '@/lib/auth';
-import { createEligiblePayouts, isPayoutsEnabled } from '@/lib/payouts';
+import { arePayoutTransfersEnabled, createEligiblePayouts, isPayoutsEnabled } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
     data: payouts,
     statusCounts,
     payoutsEnabled: isPayoutsEnabled(),
+    transfersEnabled: arePayoutTransfersEnabled(),
   });
 }
 

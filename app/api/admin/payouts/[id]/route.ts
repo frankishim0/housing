@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { UserRole } from '@prisma/client';
 import { requireRole } from '@/lib/auth';
-import { approvePayout, initiatePayoutTransfer, isPayoutsEnabled, reconcilePayout, retryFailedPayout, setPayoutHold } from '@/lib/payouts';
+import { approvePayout, arePayoutTransfersEnabled, initiatePayoutTransfer, isPayoutsEnabled, reconcilePayout, retryFailedPayout, setPayoutHold } from '@/lib/payouts';
 import { z } from 'zod';
 
 function authError(error: unknown) {
@@ -38,6 +38,9 @@ export async function POST(request: Request, context: RouteContext<'/api/admin/p
 
   try {
     if (parsed.data.action === 'approve') return NextResponse.json({ data: await approvePayout(id, admin.id, parsed.data.reason) });
+    if (parsed.data.action === 'initiate' && !arePayoutTransfersEnabled()) {
+      return NextResponse.json({ error: 'Payout transfers are disabled; approvals can be recorded but no money will be moved.' }, { status: 503 });
+    }
     if (parsed.data.action === 'initiate') return NextResponse.json({ data: await initiatePayoutTransfer(id) });
     if (parsed.data.action === 'retry') return NextResponse.json({ data: await retryFailedPayout(id, admin.id) });
     if (parsed.data.action === 'reconcile') return NextResponse.json({ data: await reconcilePayout(id) });

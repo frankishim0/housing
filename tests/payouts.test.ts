@@ -4,18 +4,22 @@ import { FinancialTransactionStatus, Prisma } from '@prisma/client';
 import { POST as processRefundRequest } from '../app/api/admin/monetization/refunds/route';
 import {
   canRetryPayout,
+  arePayoutTransfersEnabled,
   assertPayoutsTestConfiguration,
   computePayoutDueAt,
   createPayoutRecordForPaidTransaction,
   createTransferRecipient,
   decryptAccountNumber,
   encryptAccountNumber,
+  getPayoutBlockReason,
   getPayoutRetryAt,
   initiateTransfer,
   isPaystackTransferEvent,
+  isMatchingPaystackBank,
   isPayoutsEnabled,
   isSupportedPaystackPayoutCurrency,
   isSupportedPaystackPayoutRoute,
+  isValidNigerianAccountNumber,
   listBanks,
   resolveBankAccount,
   verifyTransfer,
@@ -90,6 +94,15 @@ async function main() {
     withEnv({ ...PAYOUTS_TEST_ENV, PAYOUTS_ENABLED: 'false' }, () => {
       assert.equal(isPayoutsEnabled(), false);
     });
+    assert.equal(arePayoutTransfersEnabled(), false);
+  });
+
+  await run('payout eligibility blocks unsettled, disputed, refunded, and refund-pending transactions', async () => {
+    assert.match(getPayoutBlockReason({ transactionStatus: 'PENDING_PAYMENT', refunded: false, hasActiveDispute: false, hasActiveRefund: false }) ?? '', /not settled as paid/i);
+    assert.match(getPayoutBlockReason({ transactionStatus: 'PAID', refunded: false, hasActiveDispute: true, hasActiveRefund: false }) ?? '', /open dispute/i);
+    assert.match(getPayoutBlockReason({ transactionStatus: 'PAID', refunded: false, hasActiveDispute: false, hasActiveRefund: true }) ?? '', /refund/i);
+    assert.match(getPayoutBlockReason({ transactionStatus: 'PAID', refunded: true, hasActiveDispute: false, hasActiveRefund: false }) ?? '', /refund/i);
+    assert.equal(getPayoutBlockReason({ transactionStatus: 'PAID', refunded: false, hasActiveDispute: false, hasActiveRefund: false }), null);
   });
 
   await run('assertPayoutsTestConfiguration rejects a live secret key even when payouts are enabled', async () => {
@@ -169,6 +182,8 @@ async function main() {
         },
       },
       payoutAccount: { findUnique: async () => null },
+      transactionDispute: { findFirst: async () => null },
+      transactionRefund: { findFirst: async () => null },
       financialAuditLog: { create: async () => ({}) },
     } as unknown as Prisma.TransactionClient;
 
@@ -192,6 +207,13 @@ async function main() {
     assert.equal(isSupportedPaystackPayoutRoute('GB', 'GBP'), false);
     assert.equal(isSupportedPaystackPayoutRoute('NG', 'USD'), false);
     assert.equal(isSupportedPaystackPayoutCurrency('KES'), false);
+    assert.equal(isValidNigerianAccountNumber('0123456789'), true);
+    assert.equal(isValidNigerianAccountNumber('123456789'), false);
+    assert.equal(isValidNigerianAccountNumber('01234567890'), false);
+    const banks = [{ name: 'Guaranty Trust Bank', code: '058', currency: 'NGN' }];
+    assert.equal(isMatchingPaystackBank(banks, '058', 'Guaranty Trust Bank'), true);
+    assert.equal(isMatchingPaystackBank(banks, '058', 'Other Bank'), false);
+    assert.equal(isMatchingPaystackBank(banks, '999', 'Guaranty Trust Bank'), false);
   });
 
   await run('bank account numbers round-trip through AES-256-GCM encryption without plaintext leakage', async () => {
@@ -298,36 +320,34 @@ async function main() {
     });
   });
 
-  await run('initiateTransfer rejects a non-positive or non-integer amount before calling Paystack', async () => {
+  await run('transfer initiation makes no Paystack call while payout execution is disabled', async () => {
     await withEnvAsync(PAYOUTS_TEST_ENV, async () => {
-      const mock = installFetchMock(() => { throw new Error('fetch should not be called for an invalid amount'); });
+      const mock = installFetchMock(() => { throw new Error('fetch must not be called while payout execution is disabled'); });
       try {
         await assert.rejects(
           initiateTransfer({ amountMinor: 0, recipientCode: 'RCP_1', reference: 'PO-1-1', reason: 'test', currency: 'NGN' }),
-          /positive amount/i,
+          /execution is disabled/i,
         );
         await assert.rejects(
           initiateTransfer({ amountMinor: 1.5, recipientCode: 'RCP_1', reference: 'PO-1-1', reason: 'test', currency: 'NGN' }),
-          /positive amount/i,
+          /execution is disabled/i,
         );
+        assert.equal(mock.calls.length, 0);
       } finally {
         mock.restore();
       }
     });
   });
 
-  await run('initiateTransfer normalizes a successful Paystack test-mode transfer response', async () => {
+  await run('payout execution remains disabled even with valid test configuration', async () => {
     await withEnvAsync(PAYOUTS_TEST_ENV, async () => {
-      const mock = installFetchMock(({ url }) => {
-        assert.equal(url, 'https://api.paystack.co/transfer');
-        return {
-          status: 200,
-          body: { status: true, message: 'ok', data: { transfer_code: 'TRF_synthetic_1', id: 55, reference: 'PO-1-1', status: 'success' } },
-        };
-      });
+      const mock = installFetchMock(() => { throw new Error('fetch must not be called while payout execution is disabled'); });
       try {
-        const transfer = await initiateTransfer({ amountMinor: 663_000_000, recipientCode: 'RCP_1', reference: 'PO-1-1', reason: 'Seller payout test', currency: 'NGN' });
-        assert.deepEqual(transfer, { transferCode: 'TRF_synthetic_1', processorTransferId: '55', status: 'success', reference: 'PO-1-1' });
+        await assert.rejects(
+          initiateTransfer({ amountMinor: 663_000_000, recipientCode: 'RCP_1', reference: 'PO-1-1', reason: 'Seller payout test', currency: 'NGN' }),
+          /execution is disabled/i,
+        );
+        assert.equal(mock.calls.length, 0);
       } finally {
         mock.restore();
       }

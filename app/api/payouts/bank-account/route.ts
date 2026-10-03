@@ -8,7 +8,10 @@ import {
   decryptAccountNumber,
   encryptAccountNumber,
   isPayoutsEnabled,
+  isMatchingPaystackBank,
   isSupportedPaystackPayoutRoute,
+  isValidNigerianAccountNumber,
+  listBanks,
   resolveBankAccount,
 } from '@/lib/payouts';
 import { prisma } from '@/lib/prisma';
@@ -19,7 +22,7 @@ const schema = z.object({
   currencyCode: z.string().trim().length(3).toUpperCase(),
   bankCode: z.string().trim().min(1).max(20),
   bankName: z.string().trim().min(2).max(120),
-  accountNumber: z.string().trim().regex(/^\d{6,20}$/, 'Account number must be 6-20 digits.'),
+  accountNumber: z.string().trim().regex(/^\d{10}$/, 'Nigerian bank account number must be 10 digits.'),
 }).strict();
 
 function maskAccount(last4: string) {
@@ -56,7 +59,11 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
   const account = await prisma.payoutAccount.findUnique({ where: { userId: user.id } });
-  return NextResponse.json({ data: account ? serializeAccount(account) : null, payoutsEnabled: isPayoutsEnabled() });
+  return NextResponse.json({
+    data: account ? serializeAccount(account) : null,
+    payoutsEnabled: isPayoutsEnabled(),
+    transfersEnabled: false,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -80,6 +87,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const banks = await listBanks(countryCode);
+    if (!isMatchingPaystackBank(banks, bankCode, bankName)) {
+      return NextResponse.json({ error: 'Select a valid Nigerian bank from the supported Paystack bank list.' }, { status: 422 });
+    }
+    const selectedBank = banks.find((bank) => bank.code === bankCode)!;
     const existingAccount = await prisma.payoutAccount.findUnique({ where: { userId: user.id } });
     if (existingAccount) {
       const processingPayouts = await prisma.payout.count({
@@ -91,6 +103,12 @@ export async function POST(request: NextRequest) {
     }
 
     const resolved = await resolveBankAccount({ accountNumber, bankCode });
+    if (!isValidNigerianAccountNumber(resolved.accountNumber)
+      || resolved.accountNumber !== accountNumber
+      || !resolved.accountName.trim()
+      || resolved.accountName.trim().length > 120) {
+      return NextResponse.json({ error: 'The resolved bank account number is invalid or does not match the submitted account.' }, { status: 422 });
+    }
     const sameVerifiedAccount = existingAccount
       && existingAccount.status === PayoutAccountStatus.VERIFIED
       && existingAccount.countryCode === countryCode
@@ -121,7 +139,7 @@ export async function POST(request: NextRequest) {
         countryCode,
         currencyCode,
         bankCode,
-        bankName,
+        bankName: selectedBank.name,
         accountNumberLast4: resolved.accountNumber.slice(-4),
         accountNumberCipher: encryptAccountNumber(resolved.accountNumber),
         accountName: resolved.accountName,
@@ -191,7 +209,7 @@ export async function POST(request: NextRequest) {
           entityType: 'PayoutAccount',
           entityId: saved.id,
           before: existing ? { bankName: existing.bankName, last4: existing.accountNumberLast4 } : Prisma.JsonNull,
-          after: { bankName, last4: saved.accountNumberLast4, recipientCode: recipient.recipientCode },
+          after: { bankName: selectedBank.name, last4: saved.accountNumberLast4, recipientCode: recipient.recipientCode },
           reason: existing ? 'Seller updated their verified payout bank account (test mode).' : 'Seller onboarded a verified payout bank account (test mode).',
         },
       });

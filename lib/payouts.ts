@@ -17,12 +17,42 @@ export function isPayoutsEnabled() {
   return process.env.PAYOUTS_ENABLED === 'true';
 }
 
+export function arePayoutTransfersEnabled() {
+  return false;
+}
+
 export function isSupportedPaystackPayoutCurrency(currencyCode: string) {
   return currencyCode.toUpperCase() === 'NGN';
 }
 
 export function isSupportedPaystackPayoutRoute(countryCode: string, currencyCode: string) {
   return countryCode.toUpperCase() === 'NG' && isSupportedPaystackPayoutCurrency(currencyCode);
+}
+
+export function isValidNigerianAccountNumber(accountNumber: string) {
+  return /^\d{10}$/.test(accountNumber);
+}
+
+export function getPayoutBlockReason(input: {
+  transactionStatus: string;
+  refunded: boolean;
+  hasActiveDispute: boolean;
+  hasActiveRefund: boolean;
+}) {
+  if (input.transactionStatus !== FinancialTransactionStatus.PAID) return 'The underlying transaction is not settled as paid.';
+  if (input.refunded || input.hasActiveRefund) return 'A refund is pending or has been recorded.';
+  if (input.hasActiveDispute) return 'The transaction has an open dispute.';
+  return null;
+}
+
+export function isMatchingPaystackBank(
+  banks: ListedBank[],
+  bankCode: string,
+  bankName: string,
+) {
+  return banks.some((bank) => bank.code === bankCode
+    && bank.currency.toUpperCase() === 'NGN'
+    && bank.name.trim().toLowerCase() === bankName.trim().toLowerCase());
 }
 
 export function computePayoutDueAt(now = new Date()) {
@@ -199,6 +229,9 @@ export async function initiateTransfer(input: {
   reason: string;
   currency: string;
 }): Promise<InitiatedTransfer> {
+  if (!arePayoutTransfersEnabled()) {
+    throw new Error('Payout transfer execution is disabled.');
+  }
   if (!isSupportedPaystackPayoutCurrency(input.currency)) {
     throw new Error(`Paystack transfers are not enabled for ${input.currency.toUpperCase()}.`);
   }
@@ -286,6 +319,29 @@ export async function schedulePayoutEligibility(transactionId: string, now = new
   });
 }
 
+async function getTransactionPayoutHoldReason(tx: Prisma.TransactionClient, transactionId: string) {
+  const [transaction, activeDispute, activeRefund] = await Promise.all([
+    tx.financialTransaction.findUnique({
+      where: { id: transactionId },
+      select: { status: true, refundedAt: true },
+    }),
+    tx.transactionDispute.findFirst({
+      where: { transactionId, status: { in: ['OPEN', 'UNDER_REVIEW'] } },
+      select: { id: true },
+    }),
+    tx.transactionRefund.findFirst({
+      where: { transactionId, status: { in: ['PENDING', 'PAID', 'REFUNDED'] } },
+      select: { id: true },
+    }),
+  ]);
+  return getPayoutBlockReason({
+    transactionStatus: transaction?.status ?? '',
+    refunded: Boolean(transaction?.refundedAt),
+    hasActiveDispute: Boolean(activeDispute),
+    hasActiveRefund: Boolean(activeRefund),
+  });
+}
+
 export async function createPayoutRecordForPaidTransaction(
   tx: Prisma.TransactionClient,
   transactionId: string,
@@ -295,6 +351,8 @@ export async function createPayoutRecordForPaidTransaction(
   if (!transaction || transaction.status !== FinancialTransactionStatus.PAID) {
     return { outcome: 'not_eligible' as const };
   }
+  const holdReason = await getTransactionPayoutHoldReason(tx, transactionId);
+  if (holdReason) return { outcome: 'not_eligible' as const, reason: holdReason };
 
   const existing = await tx.payout.findUnique({ where: { transactionId } });
   if (existing) return { outcome: 'already_exists' as const, payoutId: existing.id };
@@ -354,6 +412,7 @@ export async function createPayoutRecordForPaidTransaction(
 interface CreatePayoutOutcome {
   outcome: 'created' | 'already_exists' | 'not_eligible' | 'held_unsupported_currency' | 'disabled';
   payoutId?: string;
+  reason?: string;
 }
 
 /**
@@ -414,20 +473,33 @@ export async function approvePayout(payoutId: string, adminId: string, reason: s
     const payout = await tx.payout.findUnique({
       where: { id: payoutId },
       include: {
-        transaction: { select: { status: true, payoutDueAt: true } },
+        transaction: { select: { id: true, sellerId: true, status: true, payoutDueAt: true, finalPayout: true, currencyCode: true } },
         payoutAccount: true,
       },
     });
     if (!payout) return { outcome: 'not_found' as const };
     if (payout.status !== PayoutStatus.PENDING || payout.approvedAt) return { outcome: 'not_approvable' as const };
-    if (payout.transaction.status !== FinancialTransactionStatus.PAID) return { outcome: 'transaction_not_paid' as const };
-    if (payout.transaction.payoutDueAt && payout.transaction.payoutDueAt.getTime() > Date.now()) {
+    await tx.$queryRaw`SELECT "id" FROM "FinancialTransaction" WHERE "id" = ${payout.transaction.id} FOR UPDATE`;
+    const transaction = await tx.financialTransaction.findUnique({
+      where: { id: payout.transaction.id },
+      select: { id: true, sellerId: true, status: true, payoutDueAt: true, finalPayout: true, currencyCode: true },
+    });
+    if (!transaction || transaction.status !== FinancialTransactionStatus.PAID) return { outcome: 'transaction_not_paid' as const };
+    if (payout.recipientId !== transaction.sellerId
+      || !payout.amount.equals(transaction.finalPayout)
+      || payout.currencyCode !== transaction.currencyCode) {
+      return { outcome: 'payout_data_mismatch' as const };
+    }
+    const holdReason = await getTransactionPayoutHoldReason(tx, transaction.id);
+    if (holdReason) return { outcome: 'transaction_on_hold' as const, reason: holdReason };
+    if (transaction.payoutDueAt && transaction.payoutDueAt.getTime() > Date.now()) {
       return { outcome: 'holding_period' as const };
     }
     if (!isSupportedPaystackPayoutCurrency(payout.currencyCode)) return { outcome: 'unsupported_currency' as const };
     if (!payout.payoutAccount || payout.payoutAccount.status !== PayoutAccountStatus.VERIFIED
       || payout.payoutAccount.provider !== 'PAYSTACK'
       || payout.payoutAccount.currencyCode !== payout.currencyCode
+      || payout.payoutAccount.userId !== payout.recipientId
       || !payout.payoutAccount.recipientCode) {
       return { outcome: 'verified_account_required' as const };
     }
@@ -462,6 +534,7 @@ interface InitiateOutcome {
  * amount already stored on the Payout (itself sourced from the server-recorded finalPayout).
  */
 export async function initiatePayoutTransfer(payoutId: string): Promise<InitiateOutcome> {
+  if (!arePayoutTransfersEnabled()) return { outcome: 'disabled' };
   assertPayoutsTestConfiguration();
 
   const payout = await prisma.payout.findUnique({
@@ -644,6 +717,27 @@ async function settlePayoutOutcomeInTransaction(tx: Prisma.TransactionClient, in
     include: { currency: { select: { minorUnits: true } } },
   });
   if (!payout) return { outcome: 'payout_not_found' as const };
+  if (payout.provider !== 'PAYSTACK'
+    || (input.providerReference && payout.providerReference !== input.providerReference)) {
+    return { outcome: 'reference_mismatch' as const };
+  }
+  if (input.status === 'success'
+    && (input.amountMinor === undefined
+      || input.currency === undefined
+      || !input.providerReference
+      || input.transferCode === undefined && input.processorTransferId === undefined)) {
+    await tx.financialAuditLog.create({
+      data: {
+        action: FinancialAuditAction.PAYOUT_UPDATED,
+        entityType: 'Payout',
+        entityId: payout.id,
+        before: { status: payout.status },
+        after: { status: payout.status, rejectedEvent: 'incomplete_success_verification' },
+        reason: 'Paystack success was not applied because the transfer outcome lacked complete reconciliation identifiers or financial values.',
+      },
+    });
+    return { outcome: 'incomplete_verification' as const };
+  }
   if (input.amountMinor !== undefined
     && input.amountMinor !== amountToMinorUnits(payout.amount.toString(), payout.currency.minorUnits)) {
     await tx.financialAuditLog.create({
@@ -814,13 +908,15 @@ export async function retryFailedPayout(payoutId: string, adminId: string) {
   return prisma.$transaction(async (tx) => {
     const payout = await tx.payout.findUnique({
       where: { id: payoutId },
-      include: { transaction: { select: { status: true } } },
+      include: { transaction: { select: { id: true, status: true } } },
     });
     if (!payout) return { outcome: 'not_found' as const };
     if (payout.status !== PayoutStatus.FAILED) return { outcome: 'not_failed' as const };
     if (payout.attempts >= MAX_PAYOUT_ATTEMPTS) return { outcome: 'max_attempts_reached' as const };
     if (!canRetryPayout(payout.attempts, payout.nextRetryAt)) return { outcome: 'retry_backoff' as const };
     if (payout.transaction.status !== FinancialTransactionStatus.PAID) return { outcome: 'transaction_not_paid' as const };
+    const holdReason = await getTransactionPayoutHoldReason(tx, payout.transaction.id);
+    if (holdReason) return { outcome: 'transaction_on_hold' as const, reason: holdReason };
     const claimed = await tx.payout.updateMany({
       where: { id: payoutId, status: PayoutStatus.FAILED },
       data: {
@@ -859,6 +955,12 @@ export async function setPayoutHold(payoutId: string, held: boolean, reason: str
     if (!payout) return { outcome: 'not_found' as const };
     if (held && payout.status !== PayoutStatus.PENDING && payout.status !== PayoutStatus.FAILED) return { outcome: 'not_holdable' as const };
     if (!held && payout.status !== PayoutStatus.HELD) return { outcome: 'not_held' as const };
+    if (!held) {
+      await tx.$queryRaw`SELECT "id" FROM "FinancialTransaction" WHERE "id" = ${payout.transactionId} FOR UPDATE`;
+      const holdReason = await getTransactionPayoutHoldReason(tx, payout.transactionId);
+      if (holdReason) return { outcome: 'transaction_on_hold' as const, reason: holdReason };
+      if (!isSupportedPaystackPayoutCurrency(payout.currencyCode)) return { outcome: 'unsupported_currency' as const };
+    }
     const newStatus = held ? PayoutStatus.HELD : PayoutStatus.PENDING;
     const updated = await tx.payout.updateMany({
       where: { id: payoutId, status: payout.status },
