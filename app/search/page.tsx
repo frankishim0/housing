@@ -4,7 +4,7 @@ import { PropertyCard } from '@/components/property-card';
 import { PropertyMap } from '@/components/property-map';
 import { SearchForm } from '@/components/search-form';
 import { prisma } from '@/lib/prisma';
-import { presentProperty } from '@/lib/property-presenter';
+import { presentProperty, PROPERTY_WITH_RELATIONS_INCLUDE } from '@/lib/property-presenter';
 import { propertySearchSchema } from '@/lib/validation';
 import { getSessionUser } from '@/lib/auth';
 import { getLocationIdsWithinRadius } from '@/lib/location';
@@ -70,7 +70,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const [databaseProperties, total] = await prisma.$transaction([
     prisma.property.findMany({
       where,
-      include: { location: true, media: true, amenities: true, owner: true, agent: true },
+      include: PROPERTY_WITH_RELATIONS_INCLUDE,
       orderBy,
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,

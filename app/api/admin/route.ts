@@ -12,7 +12,7 @@ export async function GET() {
   const [users, properties, reports, payments] = await prisma.$transaction([
     prisma.user.findMany({ select: { id: true, name: true, email: true, role: true, createdAt: true }, orderBy: { createdAt: 'desc' } }),
     prisma.property.findMany({ include: { owner: { select: { name: true, email: true } }, location: true }, orderBy: { createdAt: 'desc' } }),
-    prisma.report.findMany({ include: { property: true, user: { select: { name: true, email: true } } }, orderBy: { createdAt: 'desc' } }),
+    prisma.report.findMany({ include: { property: true, reporter: { select: { id: true, name: true, email: true } }, targetUser: { select: { id: true, name: true, email: true, role: true } } }, orderBy: { createdAt: 'desc' } }),
     prisma.payment.findMany({ include: { user: { select: { name: true, email: true } }, property: { select: { title: true } } }, orderBy: { createdAt: 'desc' } }),
   ]);
   return NextResponse.json({ data: { users, properties, reports, payments } });

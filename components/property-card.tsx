@@ -18,10 +18,11 @@ export function PropertyCard({ property, preferredCurrency = 'USD', preferredMea
           </span>
           {property.verified && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white">
-              <ShieldCheck size={12} /> Verified
+              <ShieldCheck size={12} /> Verified listing
             </span>
           )}
-          {property.owner.verified && <span className="rounded-full bg-sky-700 px-2.5 py-1 text-xs font-semibold text-white">Verified professional</span>}
+          {property.owner.verified && <span className="rounded-full bg-sky-700 px-2.5 py-1 text-xs font-semibold text-white">Verified identity</span>}
+          {property.owner.professionalVerified && <span className="rounded-full bg-indigo-700 px-2.5 py-1 text-xs font-semibold text-white">Verified professional</span>}
         </div>
         <FavoriteButton propertyId={property.id} initialFavorite={property.favorite} />
       </div>

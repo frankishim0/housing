@@ -21,6 +21,9 @@ export interface PropertyOwner {
   avatar: string;
   rating: number;
   verified?: boolean;
+  verifiedAt?: string | null;
+  professionalVerified?: boolean;
+  professionalVerifiedAt?: string | null;
 }
 
 export interface Property {
@@ -45,6 +48,7 @@ export interface Property {
   yearBuilt: number | null;
   status: 'Available' | 'Occupied' | 'Negotiation' | 'Sold' | 'Rented';
   verified: boolean;
+  verifiedAt?: string | null;
   featured: boolean;
   favorite: boolean;
   image: string;

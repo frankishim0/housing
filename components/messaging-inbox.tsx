@@ -474,6 +474,7 @@ export function MessagingInbox({ currentUserId, timeZone, preferredCurrency = 'U
                       <time dateTime={message.createdAt}>{formatTime(message.createdAt, timeZone ?? undefined)}</time>
                       {mine && message.readAt && <span title="Seen"><Check size={13} className="text-emerald-600" /></span>}
                       <button type="button" onClick={() => setReplyTo(message)} aria-label="Reply to message" title="Reply" className="rounded p-1 opacity-70 hover:bg-slate-100 hover:text-slate-700"><Reply size={14} /></button>
+                      {!mine && <Link href={`/report?targetType=MESSAGE&messageId=${encodeURIComponent(message.id)}`} aria-label="Report message" title="Report message" className="rounded px-1 py-0.5 opacity-70 hover:bg-rose-50 hover:text-rose-700">Report</Link>}
                       <button type="button" onClick={() => void hideMessage(message.id)} aria-label="Delete message for me" title="Delete for me" className="rounded p-1 opacity-70 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={14} /></button>
                     </div>
                   </div>

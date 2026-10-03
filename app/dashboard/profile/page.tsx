@@ -19,7 +19,10 @@ export default async function ProfilePage() {
     <main className="mx-auto max-w-3xl px-4 py-10 lg:px-8">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div><p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Account</p><h1 className="mt-1 text-3xl font-bold">Global profile</h1></div>
-        <Link href="/dashboard" className="text-sm font-semibold text-slate-600 hover:text-emerald-800">Dashboard</Link>
+        <div className="flex gap-3">
+          <Link href="/dashboard/verification" className="text-sm font-semibold text-emerald-800 hover:underline">Verification</Link>
+          <Link href="/dashboard" className="text-sm font-semibold text-slate-600 hover:text-emerald-800">Dashboard</Link>
+        </div>
       </div>
       <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-7">
         <ProfileSettingsForm defaults={{

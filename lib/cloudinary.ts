@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 
 export type UploadPurpose =
   | { kind: 'property'; propertyId: string }
-  | { kind: 'message'; conversationId: string };
+  | { kind: 'message'; conversationId: string }
+  | { kind: 'verification'; verificationType: string; propertyId?: string };
 
 type UploadTicket = {
   userId: string;
@@ -10,6 +11,7 @@ type UploadTicket = {
   publicId: string;
   resourceType: 'image' | 'video' | 'raw';
   mimeType: string;
+  deliveryType: 'upload' | 'authenticated';
   expiresAt: number;
 };
 
@@ -65,12 +67,13 @@ export function verifyUploadTicket(token: string, expected: { userId: string; pu
   return ticket;
 }
 
-export function isCloudinaryUrl(url: string, cloudName: string, resourceType: string, publicId?: string) {
+export function isCloudinaryUrl(url: string, cloudName: string, resourceType: string, publicId?: string, deliveryType = 'upload') {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || parsed.hostname !== 'res.cloudinary.com' || !parsed.pathname.startsWith(`/${cloudName}/${resourceType}/upload/`)) return false;
+    if (parsed.protocol !== 'https:' || parsed.hostname !== 'res.cloudinary.com' || !parsed.pathname.startsWith(`/${cloudName}/${resourceType}/${deliveryType}/`)) return false;
     if (!publicId) return true;
-    let uploadedAssetPath = parsed.pathname.split('/upload/')[1] ?? '';
+    let uploadedAssetPath = parsed.pathname.split(`/${deliveryType}/`)[1] ?? '';
+    uploadedAssetPath = uploadedAssetPath.replace(/^s--[^/]+--\//, '');
     uploadedAssetPath = uploadedAssetPath.replace(/^v\d+\//, '');
     uploadedAssetPath = decodeURIComponent(uploadedAssetPath).replace(/\.[^/.]+$/, '');
     return uploadedAssetPath === publicId;
@@ -79,10 +82,10 @@ export function isCloudinaryUrl(url: string, cloudName: string, resourceType: st
   }
 }
 
-export async function getCloudinaryUploadDetails(publicId: string, resourceType: string) {
+export async function getCloudinaryUploadDetails(publicId: string, resourceType: string, deliveryType: 'upload' | 'authenticated' = 'upload') {
   const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
   const publicIdPath = publicId.split('/').map(encodeURIComponent).join('/');
-  const endpoint = `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/resources/${encodeURIComponent(resourceType)}/upload/${publicIdPath}`;
+  const endpoint = `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/resources/${encodeURIComponent(resourceType)}/${deliveryType}/${publicIdPath}`;
   const authorization = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
   const response = await fetch(endpoint, { headers: { Authorization: `Basic ${authorization}` }, cache: 'no-store' });
   if (!response.ok) {
@@ -95,6 +98,7 @@ export async function getCloudinaryUploadDetails(publicId: string, resourceType:
     resource_type?: string;
     bytes?: number;
     format?: string;
+    version?: number;
   };
 }
 
@@ -104,9 +108,11 @@ export async function verifyCloudinaryUpload(input: {
   secureUrl: string;
   mimeType: string;
   size: number;
+  deliveryType?: 'upload' | 'authenticated';
 }) {
   const { cloudName } = getCloudinaryConfig();
-  const details = await getCloudinaryUploadDetails(input.publicId, input.resourceType);
+  const deliveryType = input.deliveryType ?? 'upload';
+  const details = await getCloudinaryUploadDetails(input.publicId, input.resourceType, deliveryType);
   const formatsByMimeType: Record<string, string[]> = {
     'image/jpeg': ['jpg', 'jpeg'],
     'image/png': ['png'],
@@ -127,8 +133,19 @@ export async function verifyCloudinaryUpload(input: {
     && details.resource_type === input.resourceType
     && details.bytes === input.size
     && details.secure_url === input.secureUrl
-    && isCloudinaryUrl(input.secureUrl, cloudName, input.resourceType, input.publicId),
+    && isCloudinaryUrl(input.secureUrl, cloudName, input.resourceType, input.publicId, deliveryType),
   );
+}
+
+export function createAuthenticatedCloudinaryUrl(input: {
+  publicId: string;
+  resourceType: 'image' | 'video' | 'raw';
+  format: string;
+}) {
+  const { cloudName, apiSecret } = getCloudinaryConfig();
+  const assetPath = `${input.publicId}.${input.format}`;
+  const signature = crypto.createHash('sha1').update(`${assetPath}${apiSecret}`).digest('base64url').slice(0, 8);
+  return `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/${input.resourceType}/authenticated/s--${signature}--/${input.publicId.split('/').map(encodeURIComponent).join('/')}.${encodeURIComponent(input.format)}`;
 }
 
 export function classifyUpload(mimeType: string) {

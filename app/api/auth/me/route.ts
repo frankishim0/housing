@@ -25,6 +25,11 @@ export async function GET() {
       timeZone: user.timeZone,
       measurementUnit: user.measurementUnit,
       verificationStatus: user.verificationStatus,
+      emailVerifiedAt: user.emailVerifiedAt,
+      phoneVerifiedAt: user.phoneVerifiedAt,
+      verificationReviewedAt: user.verificationReviewedAt,
+      suspendedAt: user.suspendedAt,
+      suspendedReason: user.suspendedReason,
     },
   });
 }

@@ -5,7 +5,7 @@ import { Bath, BedDouble, CarFront, Check, MapPin, Share2, ShieldCheck, Star } f
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
-import { presentProperty } from '@/lib/property-presenter';
+import { presentProperty, PROPERTY_WITH_RELATIONS_INCLUDE } from '@/lib/property-presenter';
 import { FavoriteButton } from '@/components/favorite-button';
 import { PropertyContactActions } from '@/components/property-contact-actions';
 import { CurrencyPrice } from '@/components/currency-price';
@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function PropertyDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const propertyRecord = await prisma.property.findFirst({
     where: { OR: [{ slug: (await params).slug }, { id: (await params).slug }], status: { notIn: ['DRAFT', 'SUSPENDED'] } },
-    include: { location: true, media: true, amenities: true, owner: true, agent: true },
+    include: PROPERTY_WITH_RELATIONS_INCLUDE,
   });
 
   if (!propertyRecord) {
@@ -83,7 +83,7 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
 
   const similarRecords = await prisma.property.findMany({
     where: { id: { not: property.id }, status: 'PUBLISHED', location: { city: property.location.city } },
-    include: { location: true, media: true, amenities: true, owner: true, agent: true },
+    include: PROPERTY_WITH_RELATIONS_INCLUDE,
     take: 3,
   });
   const similar = similarRecords.map((item) => presentProperty(item));
@@ -141,11 +141,17 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
                   <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{property.tag}</span>
                   {property.verified && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white">
-                      <ShieldCheck size={12} /> Verified
+                      <ShieldCheck size={12} /> Verified listing
+                    </span>
+                  )}
+                  {property.verifiedAt && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      Verified on {new Intl.DateTimeFormat(currentUser?.preferredLanguage ?? 'en', { dateStyle: 'medium', timeZone: currentUser?.timeZone ?? undefined }).format(new Date(property.verifiedAt))}
                     </span>
                   )}
                 </div>
                 <h1 className="text-3xl font-bold text-slate-900">{property.title}</h1>
+                {property.verified && <p className="mt-2 max-w-2xl text-xs text-slate-500">Listing information and supporting evidence were reviewed. This review does not guarantee ownership, condition, or legitimacy; verify details independently before making a decision.</p>}
               </div>
               <div className="text-right">
                 <CurrencyPrice amount={property.price} currency={property.currency} preferredCurrency={currentUser?.preferredCurrency ?? 'USD'} className="text-3xl font-bold text-slate-900" />
@@ -178,7 +184,7 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">Property features</h3>
                 <ul className="mt-4 space-y-3 text-slate-600">
-                  {['Verified ownership', 'Secure estate', 'Near schools and shops', 'Flexible payment options'].map((feature) => (
+                  {['Listing details reviewed', 'Location details provided by advertiser', 'Property features as listed', 'Contact the listing professional for details'].map((feature) => (
                     <li key={feature} className="flex items-center gap-2"><Check size={16} className="text-emerald-600" /> {feature}</li>
                   ))}
                 </ul>
@@ -201,7 +207,10 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
               <div>
                 <p className="text-xl font-semibold text-slate-900">{property.owner.name}</p>
                 <p className="text-sm text-slate-500">{property.owner.company}</p>
-                {property.owner.verified && <p className="mt-1 text-xs font-semibold text-emerald-800">Verified professional</p>}
+                {property.owner.verified && <p className="mt-1 text-xs font-semibold text-emerald-800">Verified identity</p>}
+                {property.owner.verifiedAt && <p className="mt-1 text-xs text-slate-500">Identity checked {new Intl.DateTimeFormat(currentUser?.preferredLanguage ?? 'en', { dateStyle: 'medium', timeZone: currentUser?.timeZone ?? undefined }).format(new Date(property.owner.verifiedAt))}</p>}
+                {property.owner.professionalVerified && <p className="mt-1 text-xs font-semibold text-sky-800">Verified professional</p>}
+                {property.owner.professionalVerifiedAt && <p className="mt-1 text-xs text-slate-500">Professional verification checked {new Intl.DateTimeFormat(currentUser?.preferredLanguage ?? 'en', { dateStyle: 'medium', timeZone: currentUser?.timeZone ?? undefined }).format(new Date(property.owner.professionalVerifiedAt))}</p>}
                 <div className="mt-1 flex items-center gap-1 text-amber-500">
                   <Star size={14} fill="currentColor" />
                   <span className="text-sm font-medium text-slate-700">{property.owner.rating}</span>
@@ -211,6 +220,10 @@ export default async function PropertyDetailsPage({ params }: { params: Promise<
 
             <div className="mt-6">
               <PropertyContactActions propertyId={property.id} ownerId={propertyRecord.ownerId} agentId={propertyRecord.agentId} buyers={buyers} currentUserId={currentUser?.id} />
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href={`/report?propertyId=${encodeURIComponent(property.id)}&targetType=PROPERTY`} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Report listing</Link>
+                <Link href={`/report?targetUserId=${encodeURIComponent(propertyRecord.ownerId)}&targetType=USER`} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Report owner</Link>
+              </div>
             </div>
           </div>
 

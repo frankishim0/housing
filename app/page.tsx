@@ -4,7 +4,7 @@ import { ArrowRight, Building2, CheckCircle2, MapPin, MessageSquareText, ShieldC
 import { PropertyCard } from '@/components/property-card';
 import { SearchForm } from '@/components/search-form';
 import { prisma } from '@/lib/prisma';
-import { presentProperty } from '@/lib/property-presenter';
+import { presentProperty, PROPERTY_WITH_RELATIONS_INCLUDE } from '@/lib/property-presenter';
 import { getSessionUser } from '@/lib/auth';
 import { getMessages } from '@/lib/i18n';
 import { toSlug } from '@/lib/location';
@@ -31,13 +31,13 @@ export default async function HomePage() {
   const t = getMessages(currentUser?.preferredLanguage);
   const [databaseProperties, luxuryRecords, rentRecords, saleRecords, popularCountryRecords] = await Promise.all([prisma.property.findMany({
     where: { status: 'PUBLISHED' },
-    include: { location: true, media: true, amenities: true, owner: true, agent: true },
+    include: PROPERTY_WITH_RELATIONS_INCLUDE,
     orderBy: { createdAt: 'desc' },
     take: 18,
   }),
-  prisma.property.findMany({ where: { status: 'PUBLISHED', luxury: true }, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
-  prisma.property.findMany({ where: { status: 'PUBLISHED', listingType: { in: ['RENT', 'SHORT_TERM_RENT', 'LONG_TERM_RENT'] } }, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
-  prisma.property.findMany({ where: { status: 'PUBLISHED', listingType: 'SALE' }, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
+  prisma.property.findMany({ where: { status: 'PUBLISHED', luxury: true }, include: PROPERTY_WITH_RELATIONS_INCLUDE, orderBy: { createdAt: 'desc' }, take: 3 }),
+  prisma.property.findMany({ where: { status: 'PUBLISHED', listingType: { in: ['RENT', 'SHORT_TERM_RENT', 'LONG_TERM_RENT'] } }, include: PROPERTY_WITH_RELATIONS_INCLUDE, orderBy: { createdAt: 'desc' }, take: 3 }),
+  prisma.property.findMany({ where: { status: 'PUBLISHED', listingType: 'SALE' }, include: PROPERTY_WITH_RELATIONS_INCLUDE, orderBy: { createdAt: 'desc' }, take: 3 }),
   prisma.location.findMany({
     where: { properties: { some: { status: 'PUBLISHED' } } },
     select: { country: true, countryCode: true, _count: { select: { properties: true } } },

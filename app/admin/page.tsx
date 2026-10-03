@@ -4,6 +4,7 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { AdminMonetizationPanel } from '@/components/admin-monetization-panel';
 import { AdminPayoutsPanel } from '@/components/admin-payouts-panel';
+import { AdminModerationPanel } from '@/components/admin-moderation-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,11 +13,12 @@ export default async function AdminPage() {
   if (!user) redirect('/auth');
   if (user.role !== UserRole.ADMIN) redirect('/dashboard');
 
-  const [users, pendingProperties, reports, payments] = await prisma.$transaction([
+  const [users, pendingProperties, reports, payments, pendingVerifications] = await prisma.$transaction([
     prisma.user.count(),
     prisma.property.count({ where: { status: 'PENDING_REVIEW' } }),
     prisma.report.count({ where: { status: 'OPEN' } }),
     prisma.payment.count(),
+    prisma.verification.count({ where: { status: 'PENDING' } }),
   ]);
 
   return (
@@ -27,10 +29,12 @@ export default async function AdminPage() {
         {[
           ['Users', users],
           ['Pending listings', pendingProperties],
+          ['Pending verifications', pendingVerifications],
           ['Open reports', reports],
           ['Legacy payments', payments],
         ].map(([label, value]) => <div key={label} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-3xl font-bold text-slate-900">{value}</p><p className="mt-1 text-sm text-slate-500">{label}</p></div>)}
       </div>
+      <AdminModerationPanel />
       <AdminMonetizationPanel />
       <AdminPayoutsPanel />
     </main>

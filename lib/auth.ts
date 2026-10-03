@@ -55,6 +55,11 @@ export async function getSessionUser() {
     cookieStore.delete(SESSION_COOKIE);
     return null;
   }
+  if (session.user.suspendedAt) {
+    await prisma.session.delete({ where: { id: session.id } });
+    cookieStore.delete(SESSION_COOKIE);
+    return null;
+  }
 
   return session.user;
 }

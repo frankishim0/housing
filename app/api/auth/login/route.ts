@@ -14,6 +14,9 @@ export async function POST(request: NextRequest) {
   if (!user || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
     return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
   }
+  if (user.suspendedAt) {
+    return NextResponse.json({ error: 'This account is unavailable. Contact support for assistance.' }, { status: 403 });
+  }
 
   await createSession(user.id);
   return NextResponse.json({

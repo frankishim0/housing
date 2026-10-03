@@ -170,6 +170,7 @@ enum UserVerificationStatus {
   UNVERIFIED
   PENDING
   VERIFIED
+  REJECTED
 }
 
 enum NotificationType {
@@ -181,6 +182,28 @@ enum NotificationType {
   SYSTEM
   CALL
   LIVE_TOUR
+  VERIFICATION
+  MODERATION
+}
+
+enum ModerationAuditAction {
+  USER_VERIFICATION_SUBMITTED
+  USER_VERIFICATION_APPROVED
+  USER_VERIFICATION_REJECTED
+  USER_VERIFICATION_INFO_REQUESTED
+  PROFESSIONAL_VERIFICATION_SUBMITTED
+  PROFESSIONAL_VERIFICATION_APPROVED
+  PROFESSIONAL_VERIFICATION_REJECTED
+  PROFESSIONAL_VERIFICATION_SUSPENDED
+  PROFESSIONAL_VERIFICATION_INFO_REQUESTED
+  PROPERTY_VERIFICATION_SUBMITTED
+  PROPERTY_VERIFICATION_APPROVED
+  PROPERTY_VERIFICATION_REJECTED
+  PROPERTY_VERIFICATION_INFO_REQUESTED
+  USER_SUSPENDED
+  USER_REINSTATED
+  REPORT_CREATED
+  REPORT_STATUS_CHANGED
 }
 
 enum CallType {
@@ -213,6 +236,12 @@ model User {
   measurementUnit   MeasurementUnit           @default(SQUARE_METERS)
   timeZone          String?                   @db.VarChar(80)
   verificationStatus UserVerificationStatus   @default(UNVERIFIED)
+  emailVerifiedAt    DateTime?
+  phoneVerifiedAt    DateTime?
+  verificationReviewedAt DateTime?
+  verificationReviewedById String?
+  suspendedAt        DateTime?
+  suspendedReason    String?
   lastSeenAt        DateTime?
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
@@ -232,7 +261,6 @@ model User {
   tenants           Tenant[]
   agentProfile      AgentProfile?
   authoredReviews   Review[]
-  reports           Report[]
   passwordResetTokens PasswordResetToken[]
   messageDeletions  MessageDeletion[]
   country           Country?                  @relation("UserCountry", fields: [countryCode], references: [code], onDelete: SetNull)
@@ -253,6 +281,13 @@ model User {
   createdRefunds     TransactionRefund[]
   payoutAccount      PayoutAccount?
   approvedPayouts    Payout[]                  @relation("PayoutApprover")
+  verificationReviewer   User?                 @relation("UserVerificationReviewer", fields: [verificationReviewedById], references: [id], onDelete: SetNull)
+  reviewedUserVerifications User[]             @relation("UserVerificationReviewer")
+  verificationsReviewed  Verification[]        @relation("VerificationReviewer")
+  moderationAuditLogs    ModerationAuditLog[]
+  reportsFiled           Report[]              @relation("ReportReporter")
+  reportsAboutMe         Report[]              @relation("ReportTargetUser")
+  reportsResolved        Report[]               @relation("ReportResolvedBy")
 
   @@index([countryCode, regionId, cityId])
 }
@@ -430,6 +465,7 @@ model Property {
   viewCount     Int               @default(0)
   status        PropertyStatus    @default(DRAFT)
   verified      Boolean           @default(false)
+  verifiedAt    DateTime?
   featured      Boolean           @default(false)
   luxury        Boolean           @default(false)
   publishedAt   DateTime?
@@ -567,6 +603,7 @@ model Message {
   replies        Message[]    @relation("MessageReplies")
   attachments    MessageAttachment[]
   deletions      MessageDeletion[]
+  reports        Report[]
 
   @@index([conversationId, createdAt])
   @@index([conversationId, readAt])
@@ -1000,25 +1037,34 @@ model AgentProfile {
   company   String?
   licenceNo String?
   verified  Boolean  @default(false)
+  verifiedAt DateTime?
   rating    Float    @default(0)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Verification {
-  id          String             @id @default(cuid())
-  userId      String
-  propertyId  String?
-  type        String
-  status      VerificationStatus @default(PENDING)
-  documentUrl String?
-  notes       String?
-  createdAt   DateTime           @default(now())
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property    Property?          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  id              String             @id @default(cuid())
+  userId          String
+  propertyId      String?
+  type            String
+  status          VerificationStatus @default(PENDING)
+  documentUrl     String?
+  documents       Json?
+  metadata        Json?
+  notes           String?
+  rejectionReason String?
+  reviewerId      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @default(now()) @updatedAt
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property        Property?          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reviewer        User?              @relation("VerificationReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
 
   @@index([propertyId, status])
   @@index([userId, status])
+  @@index([type, status])
 }
 
 model Review {
@@ -1036,16 +1082,47 @@ model Review {
 }
 
 model Report {
-  id         String    @id @default(cuid())
-  propertyId String?
-  userId     String?
-  reason     String
-  details    String?
-  status     String    @default("OPEN")
-  createdAt  DateTime  @default(now())
-  property   Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id             String    @id @default(cuid())
+  propertyId     String?
+  reporterId     String?   @map("userId")
+  targetUserId   String?
+  messageId      String?
+  targetType     String    @default("PROPERTY")
+  category       String    @default("OTHER")
+  reason         String
+  details        String?
+  status         String    @default("OPEN")
+  adminNotes     String?
+  resolution     String?
+  resolvedAt     DateTime?
+  resolvedById   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+  property       Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reporter       User?     @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  targetUser     User?     @relation("ReportTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  message        Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  resolvedBy     User?     @relation("ReportResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([propertyId])
+  @@index([targetUserId])
+  @@index([messageId])
+  @@index([targetType, status])
+}
+
+model ModerationAuditLog {
+  id         String                 @id @default(cuid())
+  actorId    String?
+  action     ModerationAuditAction
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  createdAt  DateTime               @default(now())
+  actor      User?                  @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
 }

@@ -6,7 +6,7 @@ import { PropertyCard } from '@/components/property-card';
 import { getSessionUser } from '@/lib/auth';
 import { toSlug } from '@/lib/location';
 import { prisma } from '@/lib/prisma';
-import { presentProperty } from '@/lib/property-presenter';
+import { presentProperty, PROPERTY_WITH_RELATIONS_INCLUDE } from '@/lib/property-presenter';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +50,7 @@ export default async function PropertyLocationPage({ params }: { params: Promise
   };
   const [currentUser, records, total] = await Promise.all([
     getSessionUser(),
-    prisma.property.findMany({ where, include: { location: true, media: true, amenities: true, owner: true, agent: true }, orderBy: { createdAt: 'desc' }, take: 24 }),
+    prisma.property.findMany({ where, include: PROPERTY_WITH_RELATIONS_INCLUDE, orderBy: { createdAt: 'desc' }, take: 24 }),
     prisma.property.count({ where }),
   ]);
   const properties = records.map((property) => presentProperty(property));

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { PropertyCard } from '@/components/property-card';
 import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { presentProperty } from '@/lib/property-presenter';
+import { presentProperty, PROPERTY_WITH_RELATIONS_INCLUDE } from '@/lib/property-presenter';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +12,7 @@ export default async function FavoritesPage() {
   if (!user) redirect('/auth');
   const favorites = await prisma.favorite.findMany({
     where: { userId: user.id },
-    include: { property: { include: { location: true, media: true, amenities: true, owner: true, agent: true } } },
+    include: { property: { include: PROPERTY_WITH_RELATIONS_INCLUDE } },
     orderBy: { createdAt: 'desc' },
   });
 

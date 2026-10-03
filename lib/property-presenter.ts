@@ -1,15 +1,15 @@
 import type { Prisma } from '@prisma/client';
 import type { Property as UiProperty } from '@/lib/types';
 
-export type PropertyWithRelations = Prisma.PropertyGetPayload<{
-  include: {
-    location: true;
-    media: true;
-    amenities: true;
-    owner: true;
-    agent: true;
-  };
-}>;
+export const PROPERTY_WITH_RELATIONS_INCLUDE = {
+  location: true,
+  media: true,
+  amenities: true,
+  owner: { include: { agentProfile: true } },
+  agent: { include: { agentProfile: true } },
+} satisfies Prisma.PropertyInclude;
+
+export type PropertyWithRelations = Prisma.PropertyGetPayload<{ include: typeof PROPERTY_WITH_RELATIONS_INCLUDE }>;
 
 export function presentProperty(property: PropertyWithRelations, favorite = false): UiProperty {
   const media = [...property.media].sort((a, b) => Number(b.isCover) - Number(a.isCover) || a.order - b.order);
@@ -50,6 +50,7 @@ export function presentProperty(property: PropertyWithRelations, favorite = fals
     yearBuilt: property.yearBuilt,
     status,
     verified: property.verified,
+    verifiedAt: property.verifiedAt?.toISOString() ?? null,
     featured: property.featured,
     favorite,
     image: media.find((item) => item.isCover && item.type === 'IMAGE')?.url ?? media.find((item) => item.type === 'IMAGE')?.url ?? 'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?auto=format&fit=crop&w=1200&q=80',
@@ -62,6 +63,9 @@ export function presentProperty(property: PropertyWithRelations, favorite = fals
       avatar: owner.profileImage ?? 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
       rating: 0,
       verified: owner.verificationStatus === 'VERIFIED',
+      verifiedAt: owner.verificationStatus === 'VERIFIED' ? owner.verificationReviewedAt?.toISOString() ?? null : null,
+      professionalVerified: owner.agentProfile?.verified ?? false,
+      professionalVerifiedAt: owner.agentProfile?.verified ? owner.agentProfile.verifiedAt?.toISOString() ?? null : null,
     },
     createdAt: property.createdAt.toISOString(),
   };
