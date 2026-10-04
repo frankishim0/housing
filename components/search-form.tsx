@@ -1,4 +1,7 @@
-import { CountrySelect } from '@/components/country-select';
+'use client';
+
+import { useState } from 'react';
+import { SearchableCountrySelect } from '@/components/searchable-country-select';
 import { CurrencySelect } from '@/components/currency-select';
 import { DeviceLocationButton } from '@/components/device-location-button';
 import { LocationSearchInput } from '@/components/location-search-input';
@@ -7,14 +10,15 @@ const propertyOptions = ['Apartment', 'House', 'Villa', 'Duplex', 'Condo', 'Town
 const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-emerald-700';
 
 export function SearchForm({ compact = false, initialValues = {} }: { compact?: boolean; initialValues?: Record<string, string | undefined> }) {
+  const [countryCode, setCountryCode] = useState(initialValues.countryCode ?? '');
   return (
     <form action="/search" method="get" className={compact ? 'space-y-4' : 'rounded-lg border border-slate-200 bg-white p-5'}>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
           <span className="mb-1.5 block">Country, city, neighborhood, or postal code</span>
-          <LocationSearchInput defaultValue={initialValues.location ?? ''} defaultLatitude={initialValues.latitude ?? ''} defaultLongitude={initialValues.longitude ?? ''} className={inputClass} />
+          <LocationSearchInput defaultValue={initialValues.location ?? ''} defaultLatitude={initialValues.latitude ?? ''} defaultLongitude={initialValues.longitude ?? ''} className={inputClass} onCountryChange={setCountryCode} />
         </label>
-        <label className="block text-sm font-medium text-slate-700"><span className="mb-1.5 block">Country</span><CountrySelect defaultValue={initialValues.countryCode ?? ''} className={inputClass} /></label>
+        <label className="block text-sm font-medium text-slate-700"><span className="mb-1.5 block">Country</span><SearchableCountrySelect value={countryCode} onChange={setCountryCode} className={inputClass} /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-1.5 block">City</span><input name="city" defaultValue={initialValues.city ?? ''} className={inputClass} /></label>
         <label className="block text-sm font-medium text-slate-700"><span className="mb-1.5 block">Buy / rent / lease</span>
           <select name="listingType" defaultValue={initialValues.listingType ?? ''} className={inputClass}>

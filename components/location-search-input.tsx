@@ -11,7 +11,7 @@ type Result = {
   city?: string;
 };
 
-export function LocationSearchInput({ defaultValue = '', defaultLatitude = '', defaultLongitude = '', className }: { defaultValue?: string; defaultLatitude?: string; defaultLongitude?: string; className: string }) {
+export function LocationSearchInput({ defaultValue = '', defaultLatitude = '', defaultLongitude = '', className, onCountryChange }: { defaultValue?: string; defaultLatitude?: string; defaultLongitude?: string; className: string; onCountryChange?: (countryCode: string) => void }) {
   const [value, setValue] = useState(defaultValue);
   const [results, setResults] = useState<Result[]>([]);
   const latitudeRef = useRef<HTMLInputElement>(null);
@@ -54,8 +54,14 @@ export function LocationSearchInput({ defaultValue = '', defaultLatitude = '', d
           if (latitudeRef.current) latitudeRef.current.value = String(place.latitude);
           if (longitudeRef.current) longitudeRef.current.value = String(place.longitude);
           const form = latitudeRef.current?.form;
-          const country = form?.elements.namedItem('countryCode');
-          if (place.countryCode && country instanceof HTMLSelectElement) country.value = place.countryCode;
+          if (place.countryCode) {
+            if (onCountryChange) {
+              onCountryChange(place.countryCode);
+            } else {
+              const country = form?.elements.namedItem('countryCode');
+              if (country instanceof HTMLSelectElement) country.value = place.countryCode;
+            }
+          }
           const city = form?.elements.namedItem('city');
           if (place.city && city instanceof HTMLInputElement) city.value = place.city;
           setResults([]);
