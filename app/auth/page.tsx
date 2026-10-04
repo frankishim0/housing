@@ -2,7 +2,8 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CountrySelect } from '@/components/country-select';
+import { SearchableCountrySelect } from '@/components/searchable-country-select';
+import { withCallingCode } from '@/lib/phone-country';
 import { CurrencySelect } from '@/components/currency-select';
 import { getCountryCurrency } from '@/lib/international';
 import { useSetCurrencyPreference } from '@/components/currency-preference';
@@ -12,6 +13,7 @@ export default function AuthPage() {
   const setDisplayCurrency = useSetCurrencyPreference();
   const [register, setRegister] = useState(false);
   const [countryCode, setCountryCode] = useState('');
+  const [phone, setPhone] = useState('');
   const [preferredCurrency, setPreferredCurrency] = useState('USD');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -75,10 +77,11 @@ export default function AuthPage() {
                     <option value="DEVELOPER">Developer</option>
                   </select>
                 </label>
-                <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Country</span><CountrySelect value={countryCode} onChange={(value) => {
-                  setCountryCode(value);
-                  setPreferredCurrency(value ? getCountryCurrency(value) : 'USD');
-                }} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
+                <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Country</span>                <SearchableCountrySelect value={countryCode} onChange={(value) => {
+                                  setPhone((current) => withCallingCode(current, countryCode, value));
+                                  setCountryCode(value);
+                                  setPreferredCurrency(value ? getCountryCurrency(value) : 'USD');
+                                }} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Region</span><input name="region" autoComplete="address-level1" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
                   <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">City</span><input name="city" autoComplete="address-level2" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3" /></label>
@@ -90,7 +93,7 @@ export default function AuthPage() {
               <span className="mb-2 block">Email</span>
               <input name="email" type="email" required autoComplete="email" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" />
             </label>
-            {register && <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Phone with country code</span><input name="phone" type="tel" autoComplete="tel" placeholder="+1 555 010 1234" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" /></label>}
+            {register && <label className="block text-sm font-medium text-slate-700"><span className="mb-2 block">Phone with country code</span><input name="phone" type="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+1 555 010 1234" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" /></label>}
             <label className="block text-sm font-medium text-slate-700">
               <span className="mb-2 block">Password</span>
               <input name="password" type="password" minLength={8} required className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500" />
